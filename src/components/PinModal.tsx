@@ -35,10 +35,10 @@ export const PinModal: React.FC<PinModalProps> = ({
       <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-slate-200 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 font-bold text-slate-900 text-sm">
-            <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-xl bg-slate-100 text-slate-800 flex items-center justify-center">
               <Lock className="w-4 h-4" />
             </div>
-            <span>Espace Organisateur Privé</span>
+            <span>Accès Organisateur</span>
           </div>
           <button
             onClick={onClose}
@@ -48,14 +48,10 @@ export const PinModal: React.FC<PinModalProps> = ({
           </button>
         </div>
 
-        <p className="text-xs text-slate-600 leading-relaxed">
-          Cet espace est réservé à l'organisateur pour gérer les propositions et le planning. Entrez votre code secret pour y accéder.
-        </p>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4 pt-1">
           <div>
-            <label className="block text-xs font-semibold text-slate-700 mb-1">
-              Code PIN Organisateur
+            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+              Code PIN
             </label>
             <div className="relative">
               <KeyRound className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -63,7 +59,7 @@ export const PinModal: React.FC<PinModalProps> = ({
                 type="password"
                 maxLength={8}
                 autoFocus
-                placeholder="Entrez votre code..."
+                placeholder="Code d'accès"
                 value={pin}
                 onChange={(e) => {
                   setPin(e.target.value);
@@ -79,13 +75,9 @@ export const PinModal: React.FC<PinModalProps> = ({
             {error && (
               <p className="text-[11px] text-rose-600 font-medium mt-1.5 flex items-center gap-1">
                 <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                <span>Code incorrect. Réessayez.</span>
+                <span>Code incorrect.</span>
               </p>
             )}
-          </div>
-
-          <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-[11px] text-slate-500 leading-tight">
-            💡 <span className="font-semibold text-slate-700">Code par défaut :</span> <code className="font-mono font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded">1126</code> (modifiable dans vos réglages).
           </div>
 
           <div className="flex items-center gap-2 pt-1">
@@ -101,7 +93,7 @@ export const PinModal: React.FC<PinModalProps> = ({
               className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
             >
               <ShieldCheck className="w-4 h-4" />
-              <span>Déverrouiller</span>
+              <span>Valider</span>
             </button>
           </div>
         </form>
@@ -154,10 +146,10 @@ export const ChangePinModal: React.FC<ChangePinModalProps> = ({
       <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-slate-200 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2 font-bold text-slate-900 text-sm">
-            <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-700 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-xl bg-slate-100 text-slate-800 flex items-center justify-center">
               <KeyRound className="w-4 h-4" />
             </div>
-            <span>Modifier le code secret Organisateur</span>
+            <span>Modifier le code PIN</span>
           </div>
           <button
             onClick={onClose}
@@ -167,18 +159,14 @@ export const ChangePinModal: React.FC<ChangePinModalProps> = ({
           </button>
         </div>
 
-        <p className="text-xs text-slate-600 leading-relaxed">
-          Choisissez un code PIN que vous seul connaissez pour protéger l'accès à vos réponses et à votre calendrier.
-        </p>
-
-        <form onSubmit={handleSubmit} className="space-y-3">
+        <form onSubmit={handleSubmit} className="space-y-3 pt-1">
           <div>
             <label className="block text-xs font-semibold text-slate-700 mb-1">
               Code PIN actuel
             </label>
             <input
               type="password"
-              placeholder="Ex: 1126"
+              placeholder="Code actuel"
               value={oldPin}
               onChange={(e) => {
                 setOldPin(e.target.value);
@@ -195,7 +183,7 @@ export const ChangePinModal: React.FC<ChangePinModalProps> = ({
             </label>
             <input
               type="password"
-              placeholder="Ex: 2026"
+              placeholder="Nouveau code"
               value={newPin}
               onChange={(e) => {
                 setNewPin(e.target.value);

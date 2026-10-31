@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Activity, Proposal, ScheduleSlot, SlotType } from '../types';
 import { ActivityIcon } from './ActivityIcon';
-import { X, Calendar, Clock, User, MessageSquare, Check, Send, ChevronLeft, ChevronRight } from 'lucide-react';
+import { X, Calendar, Clock, User, MessageSquare, Check, Send, ChevronLeft, ChevronRight, Sun, CloudSun, Moon, Info } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 interface BookingModalProps {
@@ -113,10 +113,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     setSubmitted(true);
   };
 
-  const slotLabels: Record<SlotType, { label: string; time: string; icon: string }> = {
-    morning: { label: 'Matinée', time: '09h00 – 12h30', icon: '☀️' },
-    afternoon: { label: 'Après-midi', time: '14h00 – 18h30', icon: '🌤️' },
-    evening: { label: 'Soirée', time: '19h00 – 23h30', icon: '🌙' },
+  const slotLabels: Record<SlotType, { label: string; time: string; Icon: React.ComponentType<{ className?: string }> }> = {
+    morning: { label: 'Matinée', time: '09h00 – 12h30', Icon: Sun },
+    afternoon: { label: 'Après-midi', time: '14h00 – 18h30', Icon: CloudSun },
+    evening: { label: 'Soirée', time: '19h00 – 23h30', Icon: Moon },
   };
 
   const formattedSelectedDate = new Date(pickerYear, pickerMonth, safeDay).toLocaleDateString('fr-FR', {
@@ -323,7 +323,9 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                           : 'border-slate-200 bg-white hover:border-slate-300'
                       }`}
                     >
-                      <div className="text-base mb-1">{info.icon}</div>
+                      <div className="mb-1 text-slate-700">
+                        <info.Icon className="w-4 h-4 text-amber-600" />
+                      </div>
                       <div className="text-xs font-bold text-slate-900">{info.label}</div>
                       <div className="text-[10px] text-slate-500 font-mono">{info.time}</div>
                       {isOccupied && (
@@ -337,8 +339,9 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               </div>
 
               {currentSlotBooked && (
-                <p className="text-xs text-amber-800 bg-amber-50 p-2.5 rounded-lg border border-amber-200 mt-2">
-                  ℹ️ Ce créneau a déjà une activité validée, mais tu peux quand même proposer si tu veux te joindre au groupe ou proposer une alternative !
+                <p className="text-xs text-amber-800 bg-amber-50 p-2.5 rounded-lg border border-amber-200 mt-2 flex items-start gap-2">
+                  <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <span>Ce créneau a déjà une activité validée, mais vous pouvez quand même proposer si vous souhaitez vous joindre au groupe ou proposer une alternative.</span>
                 </p>
               )}
             </div>
