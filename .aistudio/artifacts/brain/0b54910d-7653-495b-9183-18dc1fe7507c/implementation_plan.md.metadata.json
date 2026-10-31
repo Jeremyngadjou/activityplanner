@@ -1,6 +1,6 @@
 {
-  "summary":  "Plan architectural et fonctionnel pour l'application d'invitations et de planning d'activités pour novembre, incluant la vue participant, le dashboard organisateur avec validation des créneaux, et les fonctionnalités d'enrichissement IA.",
-  "updatedAt":  "2026-10-25T18:59:10.913353197Z",
+  "summary":  "Mise à jour du nom en 'Sorties', choix du mois cible contrôlé par l'organisateur (via le lien de partage avec paramètre ?m=YYYY-MM et sélecteur dédié), et suppression de l'encart héro 'gnangnan' au profit d'un en-tête sobre et direct.",
+  "updatedAt":  "2026-10-31T23:11:32.755591973Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

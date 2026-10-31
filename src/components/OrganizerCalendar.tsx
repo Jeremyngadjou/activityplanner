@@ -11,6 +11,10 @@ import {
   Loader2,
   Check,
   LogOut,
+  ChevronLeft,
+  ChevronRight,
+  RotateCcw,
+  Share2,
 } from 'lucide-react';
 import {
   signInWithGoogleCalendar,
@@ -27,7 +31,24 @@ interface OrganizerCalendarProps {
   googleToken: string | null;
   onGoogleLoginSuccess: (user: FirebaseUser, token: string) => void;
   onGoogleLogout: () => void;
+  activeTargetMonth?: { year: number; month: number };
+  onSetActiveTargetMonth?: (year: number, month: number) => void;
 }
+
+const MONTH_NAMES = [
+  'Janvier',
+  'Février',
+  'Mars',
+  'Avril',
+  'Mai',
+  'Juin',
+  'Juillet',
+  'Août',
+  'Septembre',
+  'Octobre',
+  'Novembre',
+  'Décembre',
+];
 
 export const OrganizerCalendar: React.FC<OrganizerCalendarProps> = ({
   scheduleSlots,
@@ -37,6 +58,8 @@ export const OrganizerCalendar: React.FC<OrganizerCalendarProps> = ({
   googleToken,
   onGoogleLoginSuccess,
   onGoogleLogout,
+  activeTargetMonth,
+  onSetActiveTargetMonth,
 }) => {
   const [selectedSlotDetail, setSelectedSlotDetail] = useState<ScheduleSlot | null>(null);
   const [isLoggingIn, setIsLoggingIn] = useState(false);
@@ -44,11 +67,17 @@ export const OrganizerCalendar: React.FC<OrganizerCalendarProps> = ({
   const [googleSyncSuccess, setGoogleSyncSuccess] = useState<string | null>(null);
   const [googleSyncError, setGoogleSyncError] = useState<string | null>(null);
 
+  // Dynamic month & year state (defaults to activeTargetMonth or current date)
+  const [currentYear, setCurrentYear] = useState<number>(() => activeTargetMonth?.year ?? new Date().getFullYear());
+  const [currentMonth, setCurrentMonth] = useState<number>(() => activeTargetMonth?.month ?? new Date().getMonth());
+
   // Confirmation modal state before Google Calendar event creation
   const [confirmSyncSlot, setConfirmSyncSlot] = useState<ScheduleSlot | null>(null);
 
-  const daysInNov = 30;
-  const startOffset = 6; // Nov 1 2026 is Sunday
+  // Dynamic calendar math
+  const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+  // Monday start offset: 0 = Mon, 1 = Tue, ..., 6 = Sun
+  const startOffset = (new Date(currentYear, currentMonth, 1).getDay() + 6) % 7;
 
   const slotLabels: Record<SlotType, { name: string; times: string; color: string }> = {
     morning: { name: 'Matin', times: '09h - 12h30', color: 'bg-amber-100 text-amber-800 border-amber-300' },
@@ -58,9 +87,36 @@ export const OrganizerCalendar: React.FC<OrganizerCalendarProps> = ({
 
   const dayNames = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
 
-  const totalSlots = 30 * 3;
-  const bookedCount = scheduleSlots.length;
-  const uniqueFriends = new Set(scheduleSlots.map((s) => s.friendName)).size;
+  // Current month prefix (YYYY-MM)
+  const currentMonthPrefix = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}`;
+  const monthSlots = scheduleSlots.filter((s) => s.date.startsWith(currentMonthPrefix));
+  const totalSlotsInMonth = daysInMonth * 3;
+  const bookedCountInMonth = monthSlots.length;
+  const uniqueFriendsInMonth = new Set(monthSlots.map((s) => s.friendName)).size;
+
+  const goToPreviousMonth = () => {
+    if (currentMonth === 0) {
+      setCurrentMonth(11);
+      setCurrentYear((y) => y - 1);
+    } else {
+      setCurrentMonth((m) => m - 1);
+    }
+  };
+
+  const goToNextMonth = () => {
+    if (currentMonth === 11) {
+      setCurrentMonth(0);
+      setCurrentYear((y) => y + 1);
+    } else {
+      setCurrentMonth((m) => m + 1);
+    }
+  };
+
+  const goToToday = () => {
+    const today = new Date();
+    setCurrentYear(today.getFullYear());
+    setCurrentMonth(today.getMonth());
+  };
 
   // Handle Google Login
   const handleGoogleSignIn = async () => {
@@ -112,7 +168,7 @@ export const OrganizerCalendar: React.FC<OrganizerCalendarProps> = ({
     let icsContent = [
       'BEGIN:VCALENDAR',
       'VERSION:2.0',
-      'PRODID:-//Rendez-Vous Novembre//Planning//FR',
+      'PRODID:-//OnSeVoitQuand//Planning//FR',
       'CALSCALE:GREGORIAN',
       'METHOD:PUBLISH',
     ];
@@ -133,7 +189,7 @@ export const OrganizerCalendar: React.FC<OrganizerCalendarProps> = ({
 
       icsContent.push(
         'BEGIN:VEVENT',
-        `UID:${slot.proposalId || Math.random().toString()}@rendezvous-novembre`,
+        `UID:${slot.proposalId || Math.random().toString()}@onsevoitquand`,
         `DTSTAMP:${new Date().toISOString().replace(/[-:]/g, '').split('.')[0]}Z`,
         `DTSTART:${startDateTime}`,
         `DTEND:${endDateTime}`,
@@ -150,24 +206,32 @@ export const OrganizerCalendar: React.FC<OrganizerCalendarProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', 'planning_novembre_2026.ics');
+    link.setAttribute('download', `planning_${MONTH_NAMES[currentMonth].toLowerCase()}_${currentYear}.ics`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
 
+  const yearsOptions = [
+    currentYear - 1,
+    currentYear,
+    currentYear + 1,
+    currentYear + 2,
+    currentYear + 3,
+  ];
+
   return (
     <div className="space-y-6">
       {/* Top Banner & Stats */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
             <CalendarIcon className="w-5 h-5 text-amber-600" />
-            Emploi du Temps — Novembre 2026
+            <span>Emploi du Temps — {MONTH_NAMES[currentMonth]} {currentYear}</span>
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Vue de tous vos créneaux validés avec synchronisation Google Calendar.
+            Naviguez entre les mois pour planifier toutes vos sorties et synchroniser vos créneaux.
           </p>
         </div>
 
@@ -233,6 +297,84 @@ export const OrganizerCalendar: React.FC<OrganizerCalendarProps> = ({
         </div>
       </div>
 
+      {/* Month & Year Navigation Toolbar */}
+      <div className="bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={goToPreviousMonth}
+            className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 transition-colors cursor-pointer flex items-center gap-1 text-xs font-semibold"
+            title="Mois précédent"
+          >
+            <ChevronLeft className="w-4 h-4" />
+            <span className="hidden sm:inline">Précédent</span>
+          </button>
+
+          <div className="flex items-center gap-1.5 bg-slate-50 p-1 rounded-xl border border-slate-200">
+            <select
+              value={currentMonth}
+              onChange={(e) => setCurrentMonth(parseInt(e.target.value, 10))}
+              className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-900 focus:outline-none cursor-pointer"
+            >
+              {MONTH_NAMES.map((name, idx) => (
+                <option key={name} value={idx}>
+                  {name}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={currentYear}
+              onChange={(e) => setCurrentYear(parseInt(e.target.value, 10))}
+              className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-bold text-slate-900 focus:outline-none cursor-pointer font-mono"
+            >
+              {yearsOptions.map((yr) => (
+                <option key={yr} value={yr}>
+                  {yr}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <button
+            onClick={goToNextMonth}
+            className="p-2 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 transition-colors cursor-pointer flex items-center gap-1 text-xs font-semibold"
+            title="Mois suivant"
+          >
+            <span className="hidden sm:inline">Suivant</span>
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {activeTargetMonth && onSetActiveTargetMonth && (
+            activeTargetMonth.year === currentYear && activeTargetMonth.month === currentMonth ? (
+              <span className="px-3 py-1.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-300 text-xs font-semibold flex items-center gap-1.5 shadow-2xs">
+                <Check className="w-3.5 h-3.5 text-amber-600" />
+                <span>Mois partagé aux invités</span>
+              </span>
+            ) : (
+              <button
+                onClick={() => onSetActiveTargetMonth(currentYear, currentMonth)}
+                className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                title="Définir ce mois comme le mois par défaut ouvert par vos amis"
+              >
+                <Share2 className="w-3.5 h-3.5 text-amber-400" />
+                <span>Partager ce mois-ci</span>
+              </button>
+            )
+          )}
+
+          <button
+            onClick={goToToday}
+            className="px-3 py-1.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 transition-colors cursor-pointer text-xs font-semibold flex items-center gap-1.5"
+            title="Revenir au mois actuel"
+          >
+            <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
+            <span>Aujourd'hui</span>
+          </button>
+        </div>
+      </div>
+
       {/* Sync feedback message */}
       {googleSyncSuccess && (
         <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 flex items-center gap-2">
@@ -248,24 +390,24 @@ export const OrganizerCalendar: React.FC<OrganizerCalendarProps> = ({
         </div>
       )}
 
-      {/* KPI Cards */}
+      {/* KPI Cards for the active month */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="bg-white p-4 rounded-xl border border-slate-200">
-          <div className="text-xs text-slate-500 font-medium">Activités confirmées</div>
+          <div className="text-xs text-slate-500 font-medium">Activités en {MONTH_NAMES[currentMonth]}</div>
           <div className="text-2xl font-bold text-slate-900 font-mono tabular-nums mt-0.5">
-            {bookedCount}
+            {bookedCountInMonth}
           </div>
         </div>
         <div className="bg-white p-4 rounded-xl border border-slate-200">
           <div className="text-xs text-slate-500 font-medium">Amis au rendez-vous</div>
           <div className="text-2xl font-bold text-slate-900 font-mono tabular-nums mt-0.5">
-            {uniqueFriends}
+            {uniqueFriendsInMonth}
           </div>
         </div>
         <div className="bg-white p-4 rounded-xl border border-slate-200">
-          <div className="text-xs text-slate-500 font-medium">Créneaux encore libres</div>
+          <div className="text-xs text-slate-500 font-medium">Créneaux libres ({MONTH_NAMES[currentMonth]})</div>
           <div className="text-2xl font-bold text-slate-900 font-mono tabular-nums mt-0.5">
-            {totalSlots - bookedCount} <span className="text-xs font-normal text-slate-400">/ 90</span>
+            {totalSlotsInMonth - bookedCountInMonth} <span className="text-xs font-normal text-slate-400">/ {totalSlotsInMonth}</span>
           </div>
         </div>
       </div>
@@ -286,9 +428,9 @@ export const OrganizerCalendar: React.FC<OrganizerCalendarProps> = ({
             <div key={`cal-empty-${i}`} className="min-h-[110px] bg-slate-50/50 rounded-xl" />
           ))}
 
-          {Array.from({ length: daysInNov }).map((_, i) => {
+          {Array.from({ length: daysInMonth }).map((_, i) => {
             const day = i + 1;
-            const dateStr = `2026-11-${String(day).padStart(2, '0')}`;
+            const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
             const daySlots = scheduleSlots.filter((s) => s.date === dateStr);
             const dayPending = proposals.filter((p) => p.date === dateStr && p.status === 'pending');
 

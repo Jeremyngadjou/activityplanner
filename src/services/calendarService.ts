@@ -132,7 +132,7 @@ export const addEventToGoogleCalendar = async (
 
   const eventPayload = {
     summary: `${event.title} (avec ${event.friendName})`,
-    description: `Activité organisée via Rendez-Vous Novembre avec ${event.friendName}.${
+    description: `Activité organisée via Sorties avec ${event.friendName}.${
       event.note ? `\n\nMot de ${event.friendName} : « ${event.note} »` : ''
     }`,
     location: event.location || undefined,

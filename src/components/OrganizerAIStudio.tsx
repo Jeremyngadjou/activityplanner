@@ -117,7 +117,7 @@ export const OrganizerAIStudio: React.FC<OrganizerAIStudioProps> = ({
             <span>Intelligence Artificielle · Gemini</span>
           </div>
           <h2 className="text-xl font-bold text-slate-900 tracking-tight">
-            Générateur d'Idées de Sorties pour Novembre
+            Générateur d'Idées de Sorties
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
             Trouvez instantanément des propositions originales et chaleureuses adaptées à vos envies du moment.

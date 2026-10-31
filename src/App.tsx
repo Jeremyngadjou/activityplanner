@@ -18,7 +18,6 @@ import {
   Share2,
   Check,
   Plus,
-  Flame,
   ArrowRight,
   RefreshCw,
   Lock,
@@ -28,6 +27,21 @@ import {
 import { PinModal, ChangePinModal } from './components/PinModal';
 import { initAuth, logoutGoogle } from './services/calendarService';
 import { User as FirebaseUser } from 'firebase/auth';
+
+const MONTH_NAMES = [
+  'Janvier',
+  'Février',
+  'Mars',
+  'Avril',
+  'Mai',
+  'Juin',
+  'Juillet',
+  'Août',
+  'Septembre',
+  'Octobre',
+  'Novembre',
+  'Décembre',
+];
 
 export default function App() {
   const [currentView, setCurrentView] = useState<AppView>('friend');
@@ -48,6 +62,44 @@ export default function App() {
   // Google Calendar Auth State
   const [googleUser, setGoogleUser] = useState<FirebaseUser | null>(null);
   const [googleToken, setGoogleToken] = useState<string | null>(null);
+
+  // Target planning month chosen by the organizer (or loaded via ?m=YYYY-MM)
+  const [activeYear, setActiveYear] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const mParam = params.get('m');
+      if (mParam && /^\d{4}-\d{2}$/.test(mParam)) {
+        return parseInt(mParam.split('-')[0], 10);
+      }
+      const saved = localStorage.getItem('rdv_target_year');
+      if (saved) return parseInt(saved, 10);
+    }
+    return new Date().getFullYear();
+  });
+
+  const [activeMonth, setActiveMonth] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const mParam = params.get('m');
+      if (mParam && /^\d{4}-\d{2}$/.test(mParam)) {
+        const m = parseInt(mParam.split('-')[1], 10) - 1;
+        if (m >= 0 && m <= 11) return m;
+      }
+      const saved = localStorage.getItem('rdv_target_month');
+      if (saved) return parseInt(saved, 10);
+    }
+    return new Date().getMonth();
+  });
+
+  const handleSetActiveMonth = (year: number, month: number) => {
+    setActiveYear(year);
+    setActiveMonth(month);
+    localStorage.setItem('rdv_target_year', String(year));
+    localStorage.setItem('rdv_target_month', String(month));
+    const url = new URL(window.location.href);
+    url.searchParams.set('m', `${year}-${String(month + 1).padStart(2, '0')}`);
+    window.history.replaceState({}, '', url.toString());
+  };
 
   // Organizer Security (PIN protection)
   const STORAGE_KEY_PIN = 'rdv_nov_pin_v1';
@@ -160,12 +212,13 @@ export default function App() {
   const [showShareModal, setShowShareModal] = useState(false);
 
   // Get public shareable URL (replaces internal ais-dev- with public ais-pre-)
-  const getPublicShareUrl = () => {
+  const getPublicShareUrl = (year = activeYear, month = activeMonth) => {
     let origin = window.location.origin;
     if (origin.includes('ais-dev-')) {
       return origin.replace('ais-dev-', 'ais-pre-');
     }
-    return origin;
+    const monthFormatted = String(month + 1).padStart(2, '0');
+    return `${origin}/?m=${year}-${monthFormatted}`;
   };
 
   // Copy shareable link
@@ -411,9 +464,9 @@ export default function App() {
           <div className="flex items-center gap-3">
             <span className="text-xl font-extrabold tracking-tight text-slate-900 whitespace-nowrap shrink-0 flex items-center gap-2">
               <span className="w-8 h-8 rounded-xl bg-amber-600 text-white flex items-center justify-center shadow-xs">
-                🍂
+                <Calendar className="w-4 h-4" />
               </span>
-              <span>Rendez-Vous Novembre</span>
+              <span>Sorties</span>
             </span>
           </div>
 
@@ -475,10 +528,10 @@ export default function App() {
             </nav>
           ) : (
             <div className="hidden md:flex items-center gap-2 text-xs text-slate-500 font-medium">
-              <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200/60">
-                🍁 Novembre 2026
+              <span className="px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200/60 font-semibold">
+                🗓️ {MONTH_NAMES[activeMonth]} {activeYear}
               </span>
-              <span>Choisissez vos sorties & proposez vos disponibilités</span>
+              <span>Choisis une idée & propose ton créneau</span>
             </div>
           )}
 
@@ -568,42 +621,37 @@ export default function App() {
           /* FRIEND VIEW (Vue Invité pour choisir et proposer)        */
           /* ======================================================== */
           <div className="space-y-8 animate-in fade-in duration-200">
-            {/* Hero Section */}
-            <div className="relative rounded-3xl bg-gradient-to-br from-slate-900 via-amber-950 to-slate-900 text-white p-8 sm:p-12 overflow-hidden shadow-lg border border-slate-800">
-              <div className="absolute top-0 right-0 -mt-12 -mr-12 w-96 h-96 rounded-full bg-amber-500/10 blur-3xl pointer-events-none" />
-              <div className="absolute bottom-0 left-0 -mb-12 -ml-12 w-80 h-80 rounded-full bg-orange-600/10 blur-3xl pointer-events-none" />
-
-              <div className="relative z-10 max-w-2xl space-y-4">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 backdrop-blur-xs text-xs font-semibold text-amber-300 border border-white/10">
-                  <Flame className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Mois de Novembre 2026 · Je suis 100% dispo</span>
+            {/* Clean header section */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200">
+              <div>
+                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-amber-700">
+                  <Calendar className="w-3.5 h-3.5" />
+                  <span>Planning de {MONTH_NAMES[activeMonth]} {activeYear}</span>
                 </div>
-
-                <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight text-white leading-tight">
-                  Qu'est-ce qu'on fait ensemble ce mois-ci ?
+                <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight mt-1">
+                  Sorties & Activités
                 </h1>
-
-                <p className="text-sm sm:text-base text-slate-300 leading-relaxed">
-                  J'ai rassemblé les activités que j'ai envie de partager en novembre.
-                  Choisis celle qui te tente, sélectionne ton jour et ton moment préféré (matinée, après-midi ou soirée), et je valide ça direct dans mon emploi du temps !
+                <p className="text-xs sm:text-sm text-slate-500 mt-1">
+                  Choisissez une activité pour convenir d'une date et d'un créneau ensemble.
                 </p>
+              </div>
 
-                <div className="pt-2 flex flex-wrap items-center gap-4 text-xs text-slate-300">
-                  <span className="flex items-center gap-1.5 font-medium">
-                    <CheckCircle2 className="w-4 h-4 text-amber-400" />
-                    {activities.length} activité{activities.length > 1 ? 's' : ''} disponible{activities.length > 1 ? 's' : ''}
-                  </span>
-                  <span className="text-slate-600">·</span>
-                  <span className="flex items-center gap-1.5 font-medium">
-                    <Calendar className="w-4 h-4 text-amber-400" />
-                    Du 1er au 30 novembre
-                  </span>
-                  <span className="text-slate-600">·</span>
-                  <span className="flex items-center gap-1.5 font-medium">
-                    <Clock className="w-4 h-4 text-amber-400" />
-                    Créneaux matin, aprèm ou soir
-                  </span>
-                </div>
+              <div className="flex items-center gap-3">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-xs text-slate-600 font-medium shadow-xs">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                  <span>{activities.length} idée{activities.length > 1 ? 's' : ''} disponible{activities.length > 1 ? 's' : ''}</span>
+                </span>
+                {isOrganizerUnlocked && (
+                  <button
+                    onClick={() => {
+                      setCurrentView('organizer');
+                      setOrganizerTab('calendar');
+                    }}
+                    className="text-xs font-semibold text-amber-700 hover:text-amber-800 underline underline-offset-4 cursor-pointer"
+                  >
+                    Changer de mois
+                  </button>
+                )}
               </div>
             </div>
 
@@ -649,7 +697,7 @@ export default function App() {
                   La liste est en cours de préparation !
                 </h3>
                 <p className="text-xs text-slate-600 leading-relaxed max-w-sm mx-auto">
-                  Les activités pour novembre sont en train d'être ajoutées.
+                  Les activités sont en train d'être préparées.
                   Revenez très bientôt ou basculez sur l'Espace Organisateur pour ajouter les premières propositions.
                 </p>
                 <div className="pt-2">
@@ -867,6 +915,8 @@ export default function App() {
                 googleToken={googleToken}
                 onGoogleLoginSuccess={handleGoogleLoginSuccess}
                 onGoogleLogout={handleGoogleLogout}
+                activeTargetMonth={{ year: activeYear, month: activeMonth }}
+                onSetActiveTargetMonth={handleSetActiveMonth}
               />
             )}
 
@@ -890,6 +940,8 @@ export default function App() {
           onSubmitProposal={(data) => {
             handleCreateProposal(data);
           }}
+          defaultYear={activeYear}
+          defaultMonth={activeMonth}
         />
       )}
 
@@ -922,6 +974,34 @@ export default function App() {
               </p>
             </div>
 
+            {/* Target month picker */}
+            <div className="space-y-1.5 bg-slate-50 p-3 rounded-xl border border-slate-200">
+              <label className="text-xs font-bold text-slate-800 flex items-center justify-between">
+                <span>🗓️ Mois ciblé pour vos sorties :</span>
+                <span className="text-[11px] font-normal text-slate-500">Inclus dans le lien</span>
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                <select
+                  value={activeMonth}
+                  onChange={(e) => handleSetActiveMonth(activeYear, parseInt(e.target.value, 10))}
+                  className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none cursor-pointer"
+                >
+                  {MONTH_NAMES.map((name, idx) => (
+                    <option key={name} value={idx}>{name}</option>
+                  ))}
+                </select>
+                <select
+                  value={activeYear}
+                  onChange={(e) => handleSetActiveMonth(parseInt(e.target.value, 10), activeMonth)}
+                  className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none cursor-pointer font-mono"
+                >
+                  {[activeYear - 1, activeYear, activeYear + 1, activeYear + 2].map((yr) => (
+                    <option key={yr} value={yr}>{yr}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
             <div className="space-y-1.5">
               <label className="text-xs font-semibold text-slate-700">
                 Votre lien public (une fois déployé via « Deploy ») :
@@ -951,7 +1031,7 @@ export default function App() {
             <div className="bg-amber-50 p-3 rounded-xl border border-amber-200 text-xs text-amber-900 leading-relaxed space-y-1">
               <div className="font-semibold">📱 Vos amis n'ont besoin de rien installer :</div>
               <div>
-                Dès que le lien est activé, ils arrivent sur la <strong>Vue Invités</strong>, choisissent une activité et posent leur date en novembre avec leur moment préféré !
+                Dès qu'ils cliquent sur le lien, ils arrivent sur la <strong>Vue Invités</strong> avec le planning de <strong>{MONTH_NAMES[activeMonth]} {activeYear}</strong> déjà présélectionné, choisissent une activité et proposent un créneau !
               </div>
             </div>
 
@@ -971,7 +1051,7 @@ export default function App() {
       <footer className="mt-auto border-t border-slate-200/80 bg-white py-6">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
           <p>
-            Rendez-Vous Novembre · Partagez vos envies et recevez les disponibilités de vos amis.
+            Sorties · Partagez vos envies et organisez vos sorties entre amis.
           </p>
           <div className="flex items-center gap-4">
             <button

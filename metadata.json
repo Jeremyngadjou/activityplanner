@@ -1,6 +1,6 @@
 {
-  "name": "Rendez-Vous Novembre",
-  "description": "Planifiez et réservez des activités conviviales pour le mois de novembre entre amis, avec validation de créneaux et planning interactif.",
+  "name": "Sorties",
+  "description": "Planificateur d'activités et de sorties entre amis avec choix du mois par l'organisateur et validation de créneaux.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

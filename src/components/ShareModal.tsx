@@ -16,7 +16,7 @@ export const ShareModal: React.FC<ShareModalProps> = ({ shareUrl, onClose }) => 
   };
 
   const whatsappMessage = encodeURIComponent(
-    `Salut ! J'ai listé les activités que j'aimerais faire en novembre. Choisis ce qui te chauffe et tes créneaux directement ici : ${shareUrl}`
+    `Salut ! J'ai listé les activités qu'on pourrait faire ensemble. Choisis ce qui te tente et propose tes créneaux directement ici : ${shareUrl}`
   );
   const whatsappUrl = `https://api.whatsapp.com/send?text=${whatsappMessage}`;
 

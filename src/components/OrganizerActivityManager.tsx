@@ -145,7 +145,7 @@ export const OrganizerActivityManager: React.FC<OrganizerActivityManagerProps> =
             Mon Catalogue d'Activités ({activities.length})
           </h2>
           <p className="text-xs text-slate-500 mt-0.5">
-            Ajoutez, éditez ou supprimez les idées que vous souhaitez proposer à vos proches pour novembre.
+            Ajoutez, éditez ou supprimez les idées que vous souhaitez proposer à vos proches pour vos sorties.
           </p>
         </div>
 
@@ -177,7 +177,7 @@ export const OrganizerActivityManager: React.FC<OrganizerActivityManagerProps> =
             Aucune activité pour l'instant
           </h3>
           <p className="text-xs text-slate-500 mb-4">
-            Ajoutez au fur et à mesure les activités que vous souhaitez proposer à vos proches pour novembre.
+            Ajoutez au fur et à mesure les activités que vous souhaitez proposer à vos proches.
           </p>
           <button
             onClick={openAddModal}
@@ -238,7 +238,7 @@ export const OrganizerActivityManager: React.FC<OrganizerActivityManagerProps> =
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm overflow-y-auto">
           <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-8 p-6 space-y-4">
             <h3 className="text-lg font-bold text-slate-900">
-              {editingActivity ? 'Modifier l’activité' : 'Nouvelle activité pour Novembre'}
+              {editingActivity ? 'Modifier l’activité' : 'Nouvelle activité'}
             </h3>
 
             <form onSubmit={handleSave} className="space-y-4 text-xs">

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Activity, Proposal, ScheduleSlot, SlotType } from '../types';
 import { ActivityIcon } from './ActivityIcon';
-import { X, Calendar, Clock, User, MessageSquare, Check, Send } from 'lucide-react';
+import { X, Calendar, Clock, User, MessageSquare, Check, Send, ChevronLeft, ChevronRight } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 interface BookingModalProps {
@@ -9,16 +9,39 @@ interface BookingModalProps {
   existingSlots: ScheduleSlot[];
   onClose: () => void;
   onSubmitProposal: (proposalData: Omit<Proposal, 'id' | 'status' | 'createdAt'>) => void;
+  defaultYear?: number;
+  defaultMonth?: number;
 }
+
+const MONTH_NAMES = [
+  'Janvier',
+  'Février',
+  'Mars',
+  'Avril',
+  'Mai',
+  'Juin',
+  'Juillet',
+  'Août',
+  'Septembre',
+  'Octobre',
+  'Novembre',
+  'Décembre',
+];
 
 export const BookingModal: React.FC<BookingModalProps> = ({
   activity,
   existingSlots,
   onClose,
   onSubmitProposal,
+  defaultYear,
+  defaultMonth,
 }) => {
-  // November 2026 default
-  const [selectedDay, setSelectedDay] = useState<number>(14); // mid november by default
+  const [pickerYear, setPickerYear] = useState<number>(() => defaultYear ?? new Date().getFullYear());
+  const [pickerMonth, setPickerMonth] = useState<number>(() => defaultMonth ?? new Date().getMonth());
+  const [selectedDay, setSelectedDay] = useState<number>(() => {
+    const today = new Date().getDate();
+    return today <= 28 ? today : 1;
+  });
   const [selectedSlot, setSelectedSlot] = useState<SlotType>('afternoon');
   const [friendName, setFriendName] = useState('');
   const [friendContact, setFriendContact] = useState('');
@@ -26,22 +49,39 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   const [submitted, setSubmitted] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  // 2026-11 starts on a Sunday (Day 0).
-  // November 1st 2026 is a Sunday.
-  // In France: Monday is day 1, Sunday is day 7.
-  // Nov 1 2026 is Sunday, so offset from Monday is 6 empty cells.
-  const daysInNov = 30;
-  const startOffset = 6; // Sunday index in Mon-Sun week
+  // Dynamic calendar math for current picker month & year
+  const daysInMonth = new Date(pickerYear, pickerMonth + 1, 0).getDate();
+  const startOffset = (new Date(pickerYear, pickerMonth, 1).getDay() + 6) % 7;
 
-  const dateString = `2026-11-${String(selectedDay).padStart(2, '0')}`;
+  // Ensure selectedDay doesn't exceed days in newly selected month
+  const safeDay = Math.min(selectedDay, daysInMonth);
+  const dateString = `${pickerYear}-${String(pickerMonth + 1).padStart(2, '0')}-${String(safeDay).padStart(2, '0')}`;
+
+  const goToPrevMonth = () => {
+    if (pickerMonth === 0) {
+      setPickerMonth(11);
+      setPickerYear((y) => y - 1);
+    } else {
+      setPickerMonth((m) => m - 1);
+    }
+  };
+
+  const goToNextMonth = () => {
+    if (pickerMonth === 11) {
+      setPickerMonth(0);
+      setPickerYear((y) => y + 1);
+    } else {
+      setPickerMonth((m) => m + 1);
+    }
+  };
 
   // Check if slot is already occupied
   const isSlotBooked = (day: number, slot: SlotType) => {
-    const dStr = `2026-11-${String(day).padStart(2, '0')}`;
+    const dStr = `${pickerYear}-${String(pickerMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     return existingSlots.some((s) => s.date === dStr && s.slot === slot);
   };
 
-  const currentSlotBooked = isSlotBooked(selectedDay, selectedSlot);
+  const currentSlotBooked = isSlotBooked(safeDay, selectedSlot);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -79,12 +119,12 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     evening: { label: 'Soirée', time: '19h00 – 23h30', icon: '🌙' },
   };
 
-  const getDayName = (day: number) => {
-    // 1 Nov 2026 is Sunday
-    const dayOfWeek = (day + 5) % 7;
-    const names = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche'];
-    return names[dayOfWeek];
-  };
+  const formattedSelectedDate = new Date(pickerYear, pickerMonth, safeDay).toLocaleDateString('fr-FR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm overflow-y-auto">
@@ -121,8 +161,8 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               </h3>
               <p className="text-sm text-slate-600 max-w-md mx-auto">
                 Merci <span className="font-semibold text-slate-900">{friendName}</span> ! La proposition pour le{' '}
-                <span className="font-semibold text-slate-900">
-                  {getDayName(selectedDay)} {selectedDay} novembre en {slotLabels[selectedSlot].label.toLowerCase()}
+                <span className="font-semibold text-slate-900 capitalize">
+                  {formattedSelectedDate} ({slotLabels[selectedSlot].label.toLowerCase()})
                 </span>{' '}
                 a bien été transmise. Elle apparaîtra dans le planning dès validation !
               </p>
@@ -134,34 +174,80 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 <span>{activity.title}</span>
               </div>
               <div className="flex justify-between">
-                <span>Date :</span>
-                <span>{selectedDay} Novembre 2026 ({slotLabels[selectedSlot].label})</span>
+                <span>Date choisie :</span>
+                <span className="capitalize">{formattedSelectedDate}</span>
               </div>
               <div className="flex justify-between">
                 <span>Créneau :</span>
-                <span>{slotLabels[selectedSlot].time}</span>
+                <span>{slotLabels[selectedSlot].label} ({slotLabels[selectedSlot].time})</span>
               </div>
             </div>
 
             <button
               onClick={onClose}
-              className="w-full py-3 px-6 bg-slate-900 hover:bg-slate-800 text-white font-medium rounded-xl text-sm transition-colors shadow-sm"
+              className="w-full py-3 px-6 bg-slate-900 hover:bg-slate-800 text-white font-medium rounded-xl text-sm transition-colors shadow-sm cursor-pointer"
             >
               Parfait, fermer
             </button>
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="p-6 space-y-6">
-            {/* Step 1: Calendar Choice */}
+            {/* Step 1: Calendar Choice with Month Navigation */}
             <div>
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center justify-between mb-2.5">
                 <label className="text-sm font-bold text-slate-900 flex items-center gap-2">
                   <Calendar className="w-4 h-4 text-amber-600" />
-                  1. Choisis ton jour en Novembre 2026
+                  1. Choisis ta date
                 </label>
-                <span className="text-xs font-medium text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
-                  {getDayName(selectedDay)} {selectedDay} nov.
+                <span className="text-xs font-semibold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200 capitalize">
+                  {safeDay} {MONTH_NAMES[pickerMonth]} {pickerYear}
                 </span>
+              </div>
+
+              {/* Month Selector Bar */}
+              <div className="flex items-center justify-between bg-slate-100 p-1.5 rounded-xl border border-slate-200 mb-2">
+                <button
+                  type="button"
+                  onClick={goToPrevMonth}
+                  className="p-1 rounded-lg text-slate-600 hover:bg-white hover:text-slate-900 transition-colors cursor-pointer"
+                  title="Mois précédent"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+
+                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                  <select
+                    value={pickerMonth}
+                    onChange={(e) => setPickerMonth(parseInt(e.target.value, 10))}
+                    className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-900 focus:outline-none cursor-pointer"
+                  >
+                    {MONTH_NAMES.map((name, idx) => (
+                      <option key={name} value={idx}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={pickerYear}
+                    onChange={(e) => setPickerYear(parseInt(e.target.value, 10))}
+                    className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-900 focus:outline-none cursor-pointer font-mono"
+                  >
+                    {[pickerYear - 1, pickerYear, pickerYear + 1, pickerYear + 2].map((yr) => (
+                      <option key={yr} value={yr}>
+                        {yr}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={goToNextMonth}
+                  className="p-1 rounded-lg text-slate-600 hover:bg-white hover:text-slate-900 transition-colors cursor-pointer"
+                  title="Mois suivant"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
               </div>
 
               {/* Month calendar grid */}
@@ -176,14 +262,14 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   <span>Dim</span>
                 </div>
                 <div className="grid grid-cols-7 gap-1 text-center text-xs">
-                  {/* Empty offset days before Nov 1 */}
+                  {/* Empty offset days before 1st of month */}
                   {Array.from({ length: startOffset }).map((_, i) => (
                     <div key={`empty-${i}`} className="h-8" />
                   ))}
-                  {/* Nov 1 to 30 */}
-                  {Array.from({ length: daysInNov }).map((_, i) => {
+                  {/* 1 to daysInMonth */}
+                  {Array.from({ length: daysInMonth }).map((_, i) => {
                     const day = i + 1;
-                    const isSelected = selectedDay === day;
+                    const isSelected = safeDay === day;
                     // Check if entire day is fully booked
                     const dayFullyBooked =
                       isSlotBooked(day, 'morning') &&
@@ -195,7 +281,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                         key={day}
                         type="button"
                         onClick={() => setSelectedDay(day)}
-                        className={`h-8 w-full rounded-lg font-medium transition-all flex items-center justify-center relative ${
+                        className={`h-8 w-full rounded-lg font-medium transition-all flex items-center justify-center relative cursor-pointer ${
                           isSelected
                             ? 'bg-amber-600 text-white shadow-sm font-bold scale-105'
                             : dayFullyBooked
@@ -221,7 +307,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               <div className="grid grid-cols-3 gap-2.5">
                 {(['morning', 'afternoon', 'evening'] as SlotType[]).map((slotKey) => {
                   const info = slotLabels[slotKey];
-                  const isOccupied = isSlotBooked(selectedDay, slotKey);
+                  const isOccupied = isSlotBooked(safeDay, slotKey);
                   const isSelected = selectedSlot === slotKey;
 
                   return (

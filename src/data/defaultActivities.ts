@@ -43,7 +43,7 @@ export const INITIAL_ACTIVITIES: Activity[] = [
   {
     id: 'act-ramen',
     title: 'Tournée des Meilleurs Ramen de la Ville',
-    description: 'Trouver le bouillon le plus riche et onctueux pour affronter la fraîcheur de novembre. Bouillon mijoté 12h, nouilles fraîches et gyozas croustillants.',
+    description: 'Trouver le bouillon le plus riche et onctueux pour se régaler entre potes. Bouillon mijoté 12h, nouilles fraîches et gyozas croustillants.',
     category: 'Gastronomie',
     duration: '2h',
     locationType: 'Quartier Sainte-Anne / Centre',

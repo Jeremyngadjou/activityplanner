@@ -45,9 +45,19 @@ export const OrganizerInbox: React.FC<OrganizerInboxProps> = ({
   };
 
   const formatDate = (dateStr: string) => {
-    const parts = dateStr.split('-');
-    const day = parts[2] ? parseInt(parts[2], 10) : '';
-    return `${day} novembre 2026`;
+    try {
+      const [y, m, d] = dateStr.split('-').map(Number);
+      if (y && m && d) {
+        const date = new Date(y, m - 1, d);
+        return date.toLocaleDateString('fr-FR', {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+        });
+      }
+    } catch {}
+    return dateStr;
   };
 
   return (
