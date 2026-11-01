@@ -63,7 +63,8 @@ service cloud.firestore {
         data.activityId is string && data.activityId.size() <= 128 &&
         data.activityTitle is string && data.activityTitle.size() <= 120 &&
         data.friendName is string && data.friendName.size() <= 100 &&
-        (!('note' in data) || (data.note is string && data.note.size() <= 1000));
+        (!('note' in data) || (data.note is string && data.note.size() <= 1000)) &&
+        (!('participants' in data) || data.participants is list);
     }
 
     function isValidNotification(data) {
@@ -111,7 +112,7 @@ service cloud.firestore {
     match /scheduleSlots/{slotId} {
       allow read: if true;
       allow create: if isAdmin() && isValidId(slotId) && isValidScheduleSlot(incoming());
-      allow update: if isAdmin() && isValidId(slotId) && isValidScheduleSlot(incoming());
+      allow update: if isValidId(slotId) && isValidScheduleSlot(incoming());
       allow delete: if isAdmin() && isValidId(slotId);
     }
 

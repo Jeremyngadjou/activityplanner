@@ -44,6 +44,13 @@ export interface Proposal {
   declineReason?: string;
 }
 
+export interface SlotParticipant {
+  name: string;
+  contact?: string;
+  note?: string;
+  joinedAt: string;
+}
+
 export interface ScheduleSlot {
   id?: string;
   date: string; // YYYY-MM-DD
@@ -52,6 +59,7 @@ export interface ScheduleSlot {
   activityId: string;
   activityTitle: string;
   friendName: string;
+  participants?: SlotParticipant[];
   note?: string;
 }
 

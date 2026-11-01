@@ -1,6 +1,7 @@
 import {
   collection,
   doc,
+  getDoc,
   setDoc,
   deleteDoc,
   onSnapshot,
@@ -10,7 +11,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { db, auth, handleFirestoreError, OperationType, ADMIN_EMAIL } from '../firebase';
-import { Activity, Proposal, ScheduleSlot, AppNotification, AppSettings } from '../types';
+import { Activity, Proposal, ScheduleSlot, AppNotification, AppSettings, SlotType, SlotParticipant } from '../types';
 import { INITIAL_ACTIVITIES } from '../data/defaultActivities';
 
 // Check if currently authenticated user is the designated admin
@@ -334,11 +335,66 @@ export const saveScheduleSlotToFirestore = async (slot: ScheduleSlot): Promise<v
       activityId: slot.activityId,
       activityTitle: slot.activityTitle,
       friendName: slot.friendName,
+      participants: slot.participants || [],
     };
     if (slot.note) clean.note = slot.note;
-    await setDoc(docRef, clean);
+    await setDoc(docRef, clean, { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
+  }
+};
+
+export const joinScheduleSlotInFirestore = async (
+  date: string,
+  slot: SlotType,
+  participant: { name: string; contact?: string; note?: string }
+): Promise<ScheduleSlot | null> => {
+  const slotId = `${date}_${slot}`;
+  const path = `scheduleSlots/${slotId}`;
+  try {
+    const docRef = doc(db, 'scheduleSlots', slotId);
+    const docSnap = await getDoc(docRef);
+    if (!docSnap.exists()) return null;
+
+    const currentData = docSnap.data() as ScheduleSlot;
+    const currentParticipants = Array.isArray(currentData.participants) ? currentData.participants : [];
+
+    const newParticipant: SlotParticipant = {
+      name: participant.name.trim(),
+      contact: participant.contact?.trim() || undefined,
+      note: participant.note?.trim() || undefined,
+      joinedAt: new Date().toISOString(),
+    };
+
+    const updatedParticipants = [...currentParticipants, newParticipant];
+    await setDoc(docRef, { participants: updatedParticipants }, { merge: true });
+
+    // Send an organizer notification
+    try {
+      const notifId = `notif-join-${Date.now()}`;
+      const notifRef = doc(db, 'notifications', notifId);
+      await setDoc(notifRef, {
+        type: 'proposal_received',
+        title: `${participant.name.trim()} a rejoint une sortie`,
+        message: `${participant.name.trim()} s'est joint à « ${currentData.activityTitle} » avec ${currentData.friendName} le ${date}`,
+        activityTitle: currentData.activityTitle,
+        friendName: participant.name.trim(),
+        date,
+        slot,
+        createdAt: new Date().toISOString(),
+        read: false,
+      });
+    } catch (e) {
+      console.warn('Could not create join notification:', e);
+    }
+
+    return {
+      ...currentData,
+      participants: updatedParticipants,
+    };
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+    return null;
   }
 };
 

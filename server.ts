@@ -420,6 +420,48 @@ app.post('/api/proposals/:id/decline', async (req, res) => {
   }
 });
 
+// POST join an existing schedule slot (group activity participation)
+app.post('/api/slots/join', async (req, res) => {
+  try {
+    const { date, slot, participant } = req.body;
+    const store = await readStore();
+    const existing = store.scheduleSlots.find((s: any) => s.date === date && s.slot === slot);
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Créneau introuvable' });
+    }
+
+    if (!Array.isArray(existing.participants)) {
+      existing.participants = [];
+    }
+
+    const newPart = {
+      name: String(participant.name || '').trim(),
+      contact: participant.contact ? String(participant.contact).trim() : undefined,
+      note: participant.note ? String(participant.note).trim() : undefined,
+      joinedAt: new Date().toISOString(),
+    };
+    existing.participants.push(newPart);
+
+    store.notifications.unshift({
+      id: `notif-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      type: 'proposal_received',
+      title: `${newPart.name} a rejoint une sortie`,
+      message: `${newPart.name} s'est joint à la sortie « ${existing.activityTitle} » avec ${existing.friendName} le ${date}`,
+      activityTitle: existing.activityTitle,
+      friendName: newPart.name,
+      date,
+      slot,
+      createdAt: new Date().toISOString(),
+      read: false,
+    });
+
+    await writeStore(store);
+    res.json({ success: true, slot: existing, scheduleSlots: store.scheduleSlots });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Centralized Notifications endpoints
 app.get('/api/notifications', async (_req, res) => {
   try {

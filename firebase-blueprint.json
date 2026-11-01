@@ -50,7 +50,8 @@
         "activityId": { "type": "string", "maxLength": 128 },
         "activityTitle": { "type": "string", "maxLength": 120 },
         "friendName": { "type": "string", "maxLength": 100 },
-        "note": { "type": "string", "maxLength": 1000 }
+        "note": { "type": "string", "maxLength": 1000 },
+        "participants": { "type": "array" }
       },
       "required": ["date", "slot", "proposalId", "activityId", "activityTitle", "friendName"]
     },

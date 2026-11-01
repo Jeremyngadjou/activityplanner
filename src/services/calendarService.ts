@@ -19,10 +19,35 @@ try {
   console.warn('Firebase Auth provider non initialisé:', e);
 }
 
+const STORAGE_KEY_GOOGLE_TOKEN = 'rdv_google_cal_token';
+
 let cachedAccessToken: string | null = null;
 let isSigningIn = false;
 
-// Initialize Auth Listener safely
+export const storeAccessToken = (token: string | null) => {
+  cachedAccessToken = token;
+  try {
+    if (token) {
+      localStorage.setItem(STORAGE_KEY_GOOGLE_TOKEN, token);
+    } else {
+      localStorage.removeItem(STORAGE_KEY_GOOGLE_TOKEN);
+    }
+  } catch {}
+};
+
+export const getStoredAccessToken = (): string | null => {
+  if (cachedAccessToken) return cachedAccessToken;
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY_GOOGLE_TOKEN);
+    if (saved) {
+      cachedAccessToken = saved;
+      return saved;
+    }
+  } catch {}
+  return null;
+};
+
+// Initialize Auth Listener safely with token restoration
 export const initAuth = (
   onSuccess: (user: User, token: string) => void,
   onFailure: () => void
@@ -34,10 +59,14 @@ export const initAuth = (
 
   try {
     return onAuthStateChanged(auth, async (user) => {
-      if (user && cachedAccessToken) {
-        onSuccess(user, cachedAccessToken);
+      const token = getStoredAccessToken();
+      if (user && token) {
+        onSuccess(user, token);
+      } else if (user) {
+        // User logged in via Firebase Auth, pass token if found or empty string
+        onSuccess(user, token || '');
       } else if (!isSigningIn) {
-        cachedAccessToken = null;
+        storeAccessToken(null);
         onFailure();
       }
     });
@@ -48,7 +77,7 @@ export const initAuth = (
   }
 };
 
-// Sign in with Google Popup
+// Sign in with Google Popup and persist access token
 export const signInWithGoogleCalendar = async (): Promise<{ user: User; accessToken: string } | null> => {
   if (!auth || !provider) {
     throw new Error('Google Calendar Auth n’est pas disponible sur cet appareil.');
@@ -60,13 +89,21 @@ export const signInWithGoogleCalendar = async (): Promise<{ user: User; accessTo
     const credential = GoogleAuthProvider.credentialFromResult(result);
 
     if (!credential?.accessToken) {
-      throw new Error('Impossible de récupérer le jeton d’accès Google Calendar');
+      throw new Error('Impossible de récupérer le jeton d’accès Google Calendar. Veuillez autoriser l’accès à votre agenda.');
     }
 
-    cachedAccessToken = credential.accessToken;
-    return { user: result.user, accessToken: cachedAccessToken };
+    storeAccessToken(credential.accessToken);
+    return { user: result.user, accessToken: credential.accessToken };
   } catch (error: any) {
     console.error('Google sign-in error:', error);
+    if (
+      error?.code === 'auth/unauthorized-domain' ||
+      (error?.message && error.message.includes('unauthorized-domain'))
+    ) {
+      throw new Error(
+        `Le domaine ${typeof window !== 'undefined' ? window.location.hostname : 'Vercel'} n'est pas encore autorisé dans Firebase Console (Authentication > Paramètres > Domaines autorisés).`
+      );
+    }
     throw error;
   } finally {
     isSigningIn = false;
@@ -79,15 +116,15 @@ export const logoutGoogle = async () => {
       await signOut(auth);
     } catch {}
   }
-  cachedAccessToken = null;
+  storeAccessToken(null);
 };
 
 export const getAccessToken = (): string | null => {
-  return cachedAccessToken;
+  return getStoredAccessToken();
 };
 
 // Helper to calculate exact start and end times
-const getSlotDateTime = (date: string, slot: SlotType) => {
+export const getSlotDateTime = (date: string, slot: SlotType) => {
   switch (slot) {
     case 'morning':
       return {
@@ -108,7 +145,30 @@ const getSlotDateTime = (date: string, slot: SlotType) => {
   }
 };
 
-// Create a real Google Calendar Event
+// Generate direct Google Calendar 1-click web URL (works without any OAuth or login required!)
+export const createGoogleCalendarWebUrl = (event: {
+  title: string;
+  friendName: string;
+  date: string;
+  slot: SlotType;
+  note?: string;
+  location?: string;
+}): string => {
+  const { start, end } = getSlotDateTime(event.date, event.slot);
+  // Basic ISO format for Google Calendar: YYYYMMDDTHHmmss
+  const cleanStart = start.replace(/[-:]/g, '');
+  const cleanEnd = end.replace(/[-:]/g, '');
+  const title = encodeURIComponent(`${event.title} (avec ${event.friendName})`);
+  const details = encodeURIComponent(
+    `Activité : ${event.title}\nParticipant : ${event.friendName}${
+      event.note ? `\nNote : « ${event.note} »` : ''
+    }\nOrganisé via Sorties.`
+  );
+  const loc = event.location ? `&location=${encodeURIComponent(event.location)}` : '';
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${cleanStart}/${cleanEnd}&ctz=Europe/Paris&details=${details}${loc}`;
+};
+
+// Create a real Google Calendar Event via API
 export const addEventToGoogleCalendar = async (
   token: string,
   event: {
@@ -149,6 +209,11 @@ export const addEventToGoogleCalendar = async (
     },
     body: JSON.stringify(eventPayload),
   });
+
+  if (response.status === 401) {
+    storeAccessToken(null);
+    throw new Error('Jeton Google Calendar expiré. Veuillez vous reconnecter.');
+  }
 
   if (!response.ok) {
     const errorData = await response.json();

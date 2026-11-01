@@ -20,6 +20,7 @@ import {
   signInWithGoogleCalendar,
   logoutGoogle,
   addEventToGoogleCalendar,
+  createGoogleCalendarWebUrl,
 } from '../services/calendarService';
 import { User as FirebaseUser } from 'firebase/auth';
 
@@ -464,8 +465,16 @@ export const OrganizerCalendar: React.FC<OrganizerCalendarProps> = ({
                           key={slotKey}
                           onClick={() => setSelectedSlotDetail(booked)}
                           className={`w-full text-left p-1 rounded-md border text-[10px] font-medium leading-tight truncate block transition-transform hover:scale-[1.02] cursor-pointer ${slotInfo.color}`}
+                          title={`${booked.activityTitle} avec ${booked.friendName}${
+                            booked.participants && booked.participants.length > 0
+                              ? ` (+${booked.participants.length} amis)`
+                              : ''
+                          }`}
                         >
                           <span className="font-bold">{slotInfo.name.charAt(0)}:</span> {booked.friendName}
+                          {booked.participants && booked.participants.length > 0
+                            ? ` (+${booked.participants.length})`
+                            : ''}
                         </button>
                       );
                     }
@@ -519,6 +528,37 @@ export const OrganizerCalendar: React.FC<OrganizerCalendarProps> = ({
                   « {selectedSlotDetail.note} »
                 </div>
               )}
+
+              {selectedSlotDetail.participants && selectedSlotDetail.participants.length > 0 && (
+                <div className="mt-3 p-3 bg-emerald-50 rounded-xl border border-emerald-200">
+                  <span className="text-[11px] font-bold text-emerald-900 uppercase tracking-wider block mb-1.5">
+                    Participants inscrits ({1 + selectedSlotDetail.participants.length}) :
+                  </span>
+                  <div className="space-y-1.5">
+                    <div className="text-xs text-slate-800 flex items-center justify-between">
+                      <span className="font-semibold">{selectedSlotDetail.friendName}</span>
+                      <span className="text-[10px] text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 font-medium">
+                        Initiateur
+                      </span>
+                    </div>
+                    {selectedSlotDetail.participants.map((p, idx) => (
+                      <div
+                        key={idx}
+                        className="text-xs text-slate-700 flex items-center justify-between pt-1 border-t border-emerald-200/60"
+                      >
+                        <span className="font-medium">
+                          {p.name} {p.contact ? `(${p.contact})` : ''}
+                        </span>
+                        {p.note && (
+                          <span className="text-[11px] text-slate-500 italic max-w-[180px] truncate" title={p.note}>
+                            « {p.note} »
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Google Calendar Action */}
@@ -546,6 +586,22 @@ export const OrganizerCalendar: React.FC<OrganizerCalendarProps> = ({
                   <span>Connecter Google Calendar pour synchroniser</span>
                 </button>
               )}
+
+              <a
+                href={createGoogleCalendarWebUrl({
+                  title: selectedSlotDetail.activityTitle,
+                  friendName: selectedSlotDetail.friendName,
+                  date: selectedSlotDetail.date,
+                  slot: selectedSlotDetail.slot,
+                  note: selectedSlotDetail.note,
+                })}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full py-2 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-semibold rounded-xl border border-slate-200 flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <CalendarPlus className="w-3.5 h-3.5 text-amber-600" />
+                <span>Ouvrir dans Google Calendar</span>
+              </a>
 
               <div className="flex items-center gap-2 pt-1">
                 <button

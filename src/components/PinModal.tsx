@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { Lock, KeyRound, X, Check, ShieldCheck, AlertCircle, Loader2 } from 'lucide-react';
-import { signInWithPopup } from 'firebase/auth';
+import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { auth, googleProvider, ADMIN_EMAIL } from '../firebase';
+import { storeAccessToken } from '../services/calendarService';
 
 interface PinModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (user?: any, token?: string) => void;
   onVerifyPin: (pin: string) => Promise<boolean>;
   savedPin?: string;
 }
@@ -33,13 +34,27 @@ export const PinModal: React.FC<PinModalProps> = ({
       const result = await signInWithPopup(auth, googleProvider);
       const user = result.user;
       if (user?.email && user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
-        onSuccess();
+        const credential = GoogleAuthProvider.credentialFromResult(result);
+        const token = credential?.accessToken || '';
+        if (token) {
+          storeAccessToken(token);
+        }
+        onSuccess(user, token);
       } else {
         setError(`Accès refusé. Le compte ${user?.email || 'inconnu'} n'est pas autorisé. Seul ${ADMIN_EMAIL} a les droits d'administration.`);
       }
     } catch (err: any) {
       console.error('Erreur connexion Google:', err);
-      setError(err?.message || 'Erreur lors de la connexion Google.');
+      if (
+        err?.code === 'auth/unauthorized-domain' ||
+        (err?.message && err.message.includes('unauthorized-domain'))
+      ) {
+        setError(
+          `Le domaine « ${window.location.hostname} » doit être ajouté aux « Domaines autorisés » dans Firebase Console (Authentication > Paramètres > Domaines autorisés). En attendant, utilisez le code PIN.`
+        );
+      } else {
+        setError(err?.message || 'Erreur lors de la connexion Google.');
+      }
     } finally {
       setIsGoogleLoading(false);
     }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, Proposal, ScheduleSlot, AppNotification, AppView, OrganizerTab } from './types';
+import { Activity, Proposal, ScheduleSlot, AppNotification, AppView, OrganizerTab, SlotType } from './types';
 import { INITIAL_ACTIVITIES } from './data/defaultActivities';
 import { ActivityCard } from './components/ActivityCard';
 import { BookingModal } from './components/BookingModal';
@@ -31,7 +31,14 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { PinModal, ChangePinModal } from './components/PinModal';
-import { initAuth, logoutGoogle } from './services/calendarService';
+import {
+  initAuth,
+  logoutGoogle,
+  addEventToGoogleCalendar,
+  createGoogleCalendarWebUrl,
+  getStoredAccessToken,
+  signInWithGoogleCalendar,
+} from './services/calendarService';
 import { User as FirebaseUser } from 'firebase/auth';
 import { ADMIN_EMAIL } from './firebase';
 import {
@@ -49,6 +56,7 @@ import {
   saveScheduleSlotToFirestore,
   deleteScheduleSlotFromFirestore,
   saveSettingsToFirestore,
+  joinScheduleSlotInFirestore,
 } from './services/firestoreSync';
 
 const MONTH_NAMES = [
@@ -128,9 +136,13 @@ export default function App() {
     return 10; // Novembre 2026 (starting month)
   });
 
-  // Centralized Notifications State
+  // Centralized Notifications State (strictly silent, no popup toast banners)
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
-  const [latestToast, setLatestToast] = useState<AppNotification | null>(null);
+  const [calendarSyncNotice, setCalendarSyncNotice] = useState<{
+    type: 'success' | 'warning' | 'info';
+    message: string;
+    directUrl?: string;
+  } | null>(null);
 
   const handleSetActiveMonth = async (year: number, month: number) => {
     let safeYear = year;
@@ -246,9 +258,11 @@ export default function App() {
   const [gateError, setGateError] = useState(false);
   const [isGateVerifying, setIsGateVerifying] = useState(false);
 
-  const handleUnlockSuccess = () => {
+  const handleUnlockSuccess = (user?: FirebaseUser, token?: string) => {
     setIsOrganizerUnlocked(true);
     localStorage.setItem(STORAGE_KEY_AUTH, 'true');
+    if (user) setGoogleUser(user);
+    if (token) setGoogleToken(token);
     setCurrentView('organizer');
     setShowPinModal(false);
     setGatePin('');
@@ -353,16 +367,6 @@ export default function App() {
     setOrganizerTab('inbox');
   };
 
-  // Auto-dismiss toast banner after 6s
-  useEffect(() => {
-    if (latestToast) {
-      const timer = setTimeout(() => {
-        setLatestToast(null);
-      }, 6000);
-      return () => clearTimeout(timer);
-    }
-  }, [latestToast]);
-
   // Fetch initial and synced data
   const loadServerData = async (showLoading = true) => {
     if (showLoading) setIsLoading(true);
@@ -376,17 +380,7 @@ export default function App() {
           setScheduleSlots(data.scheduleSlots || []);
 
           if (Array.isArray(data.notifications)) {
-            setNotifications((prev) => {
-              const prevIds = new Set(prev.map((n) => n.id));
-              const incomingFresh = data.notifications.filter(
-                (n: AppNotification) => !n.read && !prevIds.has(n.id)
-              );
-              // Trigger live banner if new proposal arrived during usage
-              if (incomingFresh.length > 0 && !showLoading) {
-                setLatestToast(incomingFresh[0]);
-              }
-              return data.notifications;
-            });
+            setNotifications(data.notifications);
           }
 
           if (data.settings) {
@@ -486,18 +480,11 @@ export default function App() {
     };
   }, []);
 
-  // Notifications live listener for admin
+  // Notifications live listener for admin (strictly silent, no popup toast banners)
   useEffect(() => {
     if (googleUser?.email && googleUser.email.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
       const unsubNotifs = subscribeNotifications((liveNotifs) => {
-        setNotifications((prev) => {
-          const prevIds = new Set(prev.map((n) => n.id));
-          const fresh = liveNotifs.filter((n) => !n.read && !prevIds.has(n.id));
-          if (fresh.length > 0) {
-            setLatestToast(fresh[0]);
-          }
-          return liveNotifs;
-        });
+        setNotifications(liveNotifs);
       });
       return () => unsubNotifs?.();
     }
@@ -587,7 +574,33 @@ export default function App() {
     setProposals((prev) => [newProp, ...prev]);
   };
 
-  // Accept a proposal (organizer)
+  // Join an existing confirmed slot (friend joins group activity)
+  const handleJoinSlot = async (
+    date: string,
+    slot: SlotType,
+    participant: { name: string; contact?: string; note?: string }
+  ) => {
+    try {
+      const updated = await joinScheduleSlotInFirestore(date, slot, participant);
+      if (updated) {
+        setScheduleSlots((prev) =>
+          prev.map((s) => (s.date === date && s.slot === slot ? updated : s))
+        );
+      }
+    } catch (e) {
+      console.warn('Erreur ajout participant Firestore:', e);
+    }
+
+    try {
+      await fetch('/api/slots/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date, slot, participant }),
+      });
+    } catch {}
+  };
+
+  // Accept a proposal (organizer) with automatic Google Calendar push
   const handleAcceptProposal = async (proposalId: string) => {
     const prop = proposals.find((p) => p.id === proposalId);
     try {
@@ -627,6 +640,65 @@ export default function App() {
           note: prop.note,
         },
       ]);
+
+      // Direct & automatic Google Calendar synchronization
+      const directUrl = createGoogleCalendarWebUrl({
+        title: prop.activityTitle,
+        friendName: prop.friendName,
+        date: prop.date,
+        slot: prop.slot,
+        note: prop.note,
+      });
+
+      const token = googleToken || getStoredAccessToken();
+      if (token) {
+        try {
+          await addEventToGoogleCalendar(token, {
+            title: prop.activityTitle,
+            friendName: prop.friendName,
+            date: prop.date,
+            slot: prop.slot,
+            note: prop.note,
+          });
+          setCalendarSyncNotice({
+            type: 'success',
+            message: `« ${prop.activityTitle} avec ${prop.friendName} » a été automatiquement ajouté à votre Google Calendar !`,
+            directUrl,
+          });
+        } catch (calErr: any) {
+          console.warn('Erreur synchronisation automatique Google Calendar:', calErr);
+          setCalendarSyncNotice({
+            type: 'warning',
+            message: `Créneau validé. Synchronisation Google Agenda en attente (${calErr?.message || 'reconnexion nécessaire'}).`,
+            directUrl,
+          });
+        }
+      } else {
+        setCalendarSyncNotice({
+          type: 'info',
+          message: `Créneau validé. Vous pouvez l'ajouter directement à votre Google Calendar en 1 clic :`,
+          directUrl,
+        });
+      }
+    }
+  };
+
+  const handleConnectGoogleCalendar = async () => {
+    try {
+      const res = await signInWithGoogleCalendar();
+      if (res) {
+        handleGoogleLoginSuccess(res.user, res.accessToken);
+        setCalendarSyncNotice({
+          type: 'success',
+          message: 'Google Calendar connecté avec succès ! La synchronisation automatique est active.',
+        });
+      }
+    } catch (err: any) {
+      console.error('Erreur connexion Google Calendar:', err);
+      setCalendarSyncNotice({
+        type: 'warning',
+        message: err?.message || 'Impossible de se connecter à Google Calendar.',
+      });
     }
   };
 
@@ -1355,6 +1427,10 @@ export default function App() {
                 proposals={proposals}
                 onAcceptProposal={handleAcceptProposal}
                 onDeclineProposal={handleDeclineProposal}
+                googleToken={googleToken || getStoredAccessToken()}
+                onConnectGoogleCalendar={handleConnectGoogleCalendar}
+                calendarSyncNotice={calendarSyncNotice}
+                onDismissSyncNotice={() => setCalendarSyncNotice(null)}
               />
             )}
 
@@ -1392,6 +1468,7 @@ export default function App() {
           onSubmitProposal={(data) => {
             handleCreateProposal(data);
           }}
+          onJoinSlot={handleJoinSlot}
           defaultYear={activeYear}
           defaultMonth={activeMonth}
         />
@@ -1549,43 +1626,6 @@ export default function App() {
         onClose={() => setShowChangePinModal(false)}
         onSavePin={handleChangePinCentralized}
       />
-
-      {/* Real-time Centralized Notification Toast Banner */}
-      {latestToast && (
-        <aside
-          role="status"
-          aria-live="polite"
-          className="fixed top-20 right-4 sm:right-8 z-50 max-w-sm w-full bg-white rounded-2xl shadow-2xl border border-amber-300 p-4 flex items-start gap-3 animate-in slide-in-from-top-4 duration-200"
-        >
-          <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
-            <Bell className="w-4 h-4 text-amber-700 animate-bounce" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-bold text-slate-900">{latestToast.title}</p>
-            <p className="text-xs text-slate-600 mt-0.5 line-clamp-2">{latestToast.message}</p>
-            <div className="mt-2 flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  handleMarkNotifAsRead(latestToast.id);
-                  handleNavigateToProposal(latestToast.proposalId || '');
-                  setLatestToast(null);
-                }}
-                className="text-xs font-semibold text-amber-800 hover:text-amber-950 underline cursor-pointer"
-              >
-                Voir dans les propositions
-              </button>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setLatestToast(null)}
-            className="text-slate-400 hover:text-slate-600 p-1 rounded-md cursor-pointer"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </aside>
-      )}
     </div>
   );
 }

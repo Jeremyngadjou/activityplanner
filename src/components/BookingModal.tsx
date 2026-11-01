@@ -1,7 +1,25 @@
 import React, { useState } from 'react';
 import { Activity, Proposal, ScheduleSlot, SlotType } from '../types';
 import { ActivityIcon } from './ActivityIcon';
-import { X, Calendar, Clock, User, MessageSquare, Check, Send, ChevronLeft, ChevronRight, Sun, CloudSun, Moon, Info } from 'lucide-react';
+import {
+  X,
+  Calendar,
+  Clock,
+  User,
+  MessageSquare,
+  Check,
+  Send,
+  ChevronLeft,
+  ChevronRight,
+  Sun,
+  CloudSun,
+  Moon,
+  Info,
+  Users,
+  UserPlus,
+  AlertCircle,
+  Loader2,
+} from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 interface BookingModalProps {
@@ -9,6 +27,11 @@ interface BookingModalProps {
   existingSlots: ScheduleSlot[];
   onClose: () => void;
   onSubmitProposal: (proposalData: Omit<Proposal, 'id' | 'status' | 'createdAt'>) => void;
+  onJoinSlot?: (
+    date: string,
+    slot: SlotType,
+    participant: { name: string; contact?: string; note?: string }
+  ) => Promise<void>;
   defaultYear?: number;
   defaultMonth?: number;
 }
@@ -33,6 +56,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   existingSlots,
   onClose,
   onSubmitProposal,
+  onJoinSlot,
   defaultYear,
   defaultMonth,
 }) => {
@@ -47,6 +71,8 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   const [friendContact, setFriendContact] = useState('');
   const [note, setNote] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const [wasJoined, setWasJoined] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
   // Dynamic calendar math for current picker month & year
@@ -79,45 +105,25 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     }
   };
 
-  // Check if slot is already occupied
-  const isSlotBooked = (day: number, slot: SlotType) => {
+  // Find slot for given day & slot key
+  const getSlotForTime = (day: number, slot: SlotType) => {
     const dStr = `${pickerYear}-${String(pickerMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    return existingSlots.some((s) => s.date === dStr && s.slot === slot);
+    return existingSlots.find((s) => s.date === dStr && s.slot === slot);
   };
 
-  const currentSlotBooked = isSlotBooked(safeDay, selectedSlot);
+  // Current selected slot info
+  const currentMatchingSlot = getSlotForTime(safeDay, selectedSlot);
+  const isCurrentSlotForThisActivity = currentMatchingSlot?.activityId === activity.id;
+  const isCurrentSlotForOtherActivity =
+    currentMatchingSlot && currentMatchingSlot.activityId !== activity.id;
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!friendName.trim()) {
-      setErrorMsg('Veuillez renseigner votre prénom ou surnom.');
-      return;
-    }
+  // Existing sessions already planned for this activity across all months
+  const existingActivitySlots = existingSlots.filter((s) => s.activityId === activity.id);
 
-    onSubmitProposal({
-      activityId: activity.id,
-      activityTitle: activity.title,
-      friendName: friendName.trim(),
-      friendContact: friendContact.trim() || undefined,
-      note: note.trim() || undefined,
-      date: dateString,
-      slot: selectedSlot,
-    });
-
-    try {
-      confetti({
-        particleCount: 80,
-        spread: 60,
-        origin: { y: 0.6 },
-      });
-    } catch {
-      // fallback
-    }
-
-    setSubmitted(true);
-  };
-
-  const slotLabels: Record<SlotType, { label: string; time: string; Icon: React.ComponentType<{ className?: string }> }> = {
+  const slotLabels: Record<
+    SlotType,
+    { label: string; time: string; Icon: React.ComponentType<{ className?: string }> }
+  > = {
     morning: { label: 'Matinée', time: '09h00 – 12h30', Icon: Sun },
     afternoon: { label: 'Après-midi', time: '14h00 – 18h30', Icon: CloudSun },
     evening: { label: 'Soirée', time: '19h00 – 23h30', Icon: Moon },
@@ -130,6 +136,84 @@ export const BookingModal: React.FC<BookingModalProps> = ({
     year: 'numeric',
   });
 
+  const handleSelectPreExistingSession = (s: ScheduleSlot) => {
+    const [y, m, d] = s.date.split('-').map(Number);
+    setPickerYear(y);
+    setPickerMonth(m - 1);
+    setSelectedDay(d);
+    setSelectedSlot(s.slot);
+    const input = document.getElementById('booking-friend-name-input');
+    input?.focus();
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!friendName.trim()) {
+      setErrorMsg('Veuillez renseigner votre prénom ou surnom.');
+      return;
+    }
+
+    if (isCurrentSlotForOtherActivity) {
+      setErrorMsg("Ce créneau est déjà réservé pour une autre activité. Veuillez choisir un autre créneau.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setErrorMsg('');
+
+    try {
+      // If joining an already booked session for this exact activity
+      if (isCurrentSlotForThisActivity && onJoinSlot) {
+        await onJoinSlot(dateString, selectedSlot, {
+          name: friendName.trim(),
+          contact: friendContact.trim() || undefined,
+          note: note.trim() || undefined,
+        });
+        setWasJoined(true);
+      } else {
+        // Normal proposal
+        onSubmitProposal({
+          activityId: activity.id,
+          activityTitle: activity.title,
+          friendName: friendName.trim(),
+          friendContact: friendContact.trim() || undefined,
+          note: note.trim() || undefined,
+          date: dateString,
+          slot: selectedSlot,
+        });
+        setWasJoined(false);
+      }
+
+      try {
+        confetti({
+          particleCount: 80,
+          spread: 60,
+          origin: { y: 0.6 },
+        });
+      } catch {}
+
+      setSubmitted(true);
+    } catch (err: any) {
+      setErrorMsg(err?.message || "Une erreur s'est produite.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const formatDateString = (dateStr: string) => {
+    try {
+      const [y, m, d] = dateStr.split('-').map(Number);
+      return new Date(y, m - 1, d).toLocaleDateString('fr-FR', {
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      });
+    } catch {
+      return dateStr;
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm overflow-y-auto">
       <div className="relative w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-8 animate-in fade-in zoom-in-95 duration-200">
@@ -137,21 +221,21 @@ export const BookingModal: React.FC<BookingModalProps> = ({
         <div className={`p-6 bg-gradient-to-r ${activity.accentGradient} text-white relative`}>
           <button
             onClick={onClose}
-            className="absolute top-4 right-4 p-2 text-white/80 hover:text-white bg-black/20 hover:bg-black/40 rounded-full transition-colors"
+            className="absolute top-4 right-4 p-2 text-white/80 hover:text-white bg-black/20 hover:bg-black/40 rounded-full transition-colors cursor-pointer"
             title="Fermer"
           >
             <X className="w-5 h-5" />
           </button>
           <div className="flex items-center gap-2 text-white/80 text-xs font-semibold uppercase tracking-wider mb-1">
             <ActivityIcon name={activity.iconName} className="w-4 h-4" />
-            <span>{activity.category} · {activity.duration}</span>
+            <span>
+              {activity.category} · {activity.duration}
+            </span>
           </div>
           <h2 className="text-xl md:text-2xl font-bold tracking-tight text-white mb-2">
             {activity.title}
           </h2>
-          <p className="text-sm text-white/90 line-clamp-2">
-            {activity.description}
-          </p>
+          <p className="text-sm text-white/90 line-clamp-2">{activity.description}</p>
         </div>
 
         {submitted ? (
@@ -161,14 +245,29 @@ export const BookingModal: React.FC<BookingModalProps> = ({
             </div>
             <div>
               <h3 className="text-xl font-bold text-slate-900 mb-1">
-                Demande envoyée avec succès !
+                {wasJoined ? 'Participation confirmée !' : 'Demande envoyée avec succès !'}
               </h3>
               <p className="text-sm text-slate-600 max-w-md mx-auto">
-                Merci <span className="font-semibold text-slate-900">{friendName}</span> ! La proposition pour le{' '}
-                <span className="font-semibold text-slate-900 capitalize">
-                  {formattedSelectedDate} ({slotLabels[selectedSlot].label.toLowerCase()})
-                </span>{' '}
-                a bien été transmise. Elle apparaîtra dans le planning dès validation !
+                {wasJoined ? (
+                  <>
+                    Super <span className="font-semibold text-slate-900">{friendName}</span> ! Vous êtes
+                    inscrit(e) sur la sortie avec{' '}
+                    <span className="font-semibold text-slate-900">{currentMatchingSlot?.friendName}</span> pour
+                    le{' '}
+                    <span className="font-semibold text-slate-900 capitalize">
+                      {formattedSelectedDate} ({slotLabels[selectedSlot].label.toLowerCase()})
+                    </span>.
+                  </>
+                ) : (
+                  <>
+                    Merci <span className="font-semibold text-slate-900">{friendName}</span> ! La proposition
+                    pour le{' '}
+                    <span className="font-semibold text-slate-900 capitalize">
+                      {formattedSelectedDate} ({slotLabels[selectedSlot].label.toLowerCase()})
+                    </span>{' '}
+                    a bien été transmise. Elle apparaîtra dans le planning dès validation !
+                  </>
+                )}
               </p>
             </div>
 
@@ -183,8 +282,16 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               </div>
               <div className="flex justify-between">
                 <span>Créneau :</span>
-                <span>{slotLabels[selectedSlot].label} ({slotLabels[selectedSlot].time})</span>
+                <span>
+                  {slotLabels[selectedSlot].label} ({slotLabels[selectedSlot].time})
+                </span>
               </div>
+              {wasJoined && currentMatchingSlot && (
+                <div className="flex justify-between text-emerald-800 font-semibold pt-1 border-t border-slate-200">
+                  <span>Groupe :</span>
+                  <span>Avec {currentMatchingSlot.friendName} et les autres amis</span>
+                </div>
+              )}
             </div>
 
             <button
@@ -196,6 +303,69 @@ export const BookingModal: React.FC<BookingModalProps> = ({
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="p-6 space-y-6">
+            {/* Quick Banner: Existing Sessions for this activity */}
+            {existingActivitySlots.length > 0 && (
+              <div className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-emerald-900 flex items-center gap-1.5 uppercase tracking-wider">
+                    <Users className="w-4 h-4 text-emerald-700" />
+                    Sortie collective déjà au planning
+                  </span>
+                  <span className="text-[11px] font-semibold text-emerald-800 bg-white px-2 py-0.5 rounded-md border border-emerald-200">
+                    {existingActivitySlots.length} session(s)
+                  </span>
+                </div>
+                <p className="text-xs text-emerald-800 leading-relaxed">
+                  Cette activité est déjà calée sur un ou plusieurs créneaux. Vous pouvez directement vous joindre au groupe !
+                </p>
+                <div className="space-y-2">
+                  {existingActivitySlots.map((s) => {
+                    const isCurrentlyChosen = s.date === dateString && s.slot === selectedSlot;
+                    const participantsCount = 1 + (s.participants?.length || 0);
+
+                    return (
+                      <div
+                        key={`${s.date}-${s.slot}`}
+                        className={`p-3 rounded-xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                          isCurrentlyChosen
+                            ? 'bg-emerald-100/70 border-emerald-400 ring-1 ring-emerald-300'
+                            : 'bg-white border-emerald-200 shadow-xs'
+                        }`}
+                      >
+                        <div>
+                          <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                            <span className="capitalize">{formatDateString(s.date)}</span>
+                            <span className="text-slate-300">·</span>
+                            <span>{slotLabels[s.slot]?.label}</span>
+                          </div>
+                          <div className="text-[11px] text-slate-600 mt-0.5">
+                            Participants ({participantsCount}) :{' '}
+                            <strong className="text-slate-900">{s.friendName}</strong>
+                            {s.participants && s.participants.length > 0 && (
+                              <span>, {s.participants.map((p) => p.name).join(', ')}</span>
+                            )}
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleSelectPreExistingSession(s)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold shrink-0 transition-colors flex items-center justify-center gap-1.5 cursor-pointer ${
+                            isCurrentlyChosen
+                              ? 'bg-emerald-700 text-white'
+                              : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                          }`}
+                        >
+                          <UserPlus className="w-3.5 h-3.5" />
+                          <span>{isCurrentlyChosen ? 'Session sélectionnée' : 'Rejoindre ce créneau'}</span>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Step 1: Calendar Choice with Month Navigation */}
             <div>
               <div className="flex items-center justify-between mb-2.5">
@@ -220,11 +390,11 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   <ChevronLeft className="w-4 h-4" />
                 </button>
 
-                <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
                   <select
                     value={pickerMonth}
                     onChange={(e) => setPickerMonth(parseInt(e.target.value, 10))}
-                    className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-900 focus:outline-none cursor-pointer"
+                    className="bg-transparent font-bold text-slate-800 focus:outline-none cursor-pointer"
                   >
                     {MONTH_NAMES.map((name, idx) => {
                       const isDisabled = pickerYear === 2026 && idx < 10;
@@ -235,6 +405,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                       );
                     })}
                   </select>
+
                   <select
                     value={pickerYear}
                     onChange={(e) => {
@@ -244,9 +415,9 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                         setPickerMonth(10);
                       }
                     }}
-                    className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-900 focus:outline-none cursor-pointer font-mono"
+                    className="bg-transparent font-bold text-slate-800 focus:outline-none cursor-pointer font-mono"
                   >
-                    {[2026, 2027, 2028].map((yr) => (
+                    {[2026, 2027].map((yr) => (
                       <option key={yr} value={yr}>
                         {yr}
                       </option>
@@ -284,11 +455,18 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                   {Array.from({ length: daysInMonth }).map((_, i) => {
                     const day = i + 1;
                     const isSelected = safeDay === day;
-                    // Check if entire day is fully booked
-                    const dayFullyBooked =
-                      isSlotBooked(day, 'morning') &&
-                      isSlotBooked(day, 'afternoon') &&
-                      isSlotBooked(day, 'evening');
+
+                    // Check day slots status
+                    const mSlot = getSlotForTime(day, 'morning');
+                    const aSlot = getSlotForTime(day, 'afternoon');
+                    const eSlot = getSlotForTime(day, 'evening');
+
+                    const hasThisActivityOnDay =
+                      mSlot?.activityId === activity.id ||
+                      aSlot?.activityId === activity.id ||
+                      eSlot?.activityId === activity.id;
+
+                    const dayFullyOccupied = !!mSlot && !!aSlot && !!eSlot;
 
                     return (
                       <button
@@ -298,10 +476,17 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                         className={`h-8 w-full rounded-lg font-medium transition-all flex items-center justify-center relative cursor-pointer ${
                           isSelected
                             ? 'bg-amber-600 text-white shadow-sm font-bold scale-105'
-                            : dayFullyBooked
+                            : hasThisActivityOnDay
+                            ? 'bg-emerald-100 text-emerald-800 font-bold border border-emerald-300'
+                            : dayFullyOccupied
                             ? 'text-slate-400 line-through hover:bg-slate-200'
                             : 'text-slate-700 hover:bg-slate-200'
                         }`}
+                        title={
+                          hasThisActivityOnDay
+                            ? 'Cette activité est déjà prévue ce jour-là ! Vous pouvez la rejoindre.'
+                            : undefined
+                        }
                       >
                         {day}
                       </button>
@@ -321,7 +506,9 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               <div className="grid grid-cols-3 gap-2.5">
                 {(['morning', 'afternoon', 'evening'] as SlotType[]).map((slotKey) => {
                   const info = slotLabels[slotKey];
-                  const isOccupied = isSlotBooked(safeDay, slotKey);
+                  const existingOnTime = getSlotForTime(safeDay, slotKey);
+                  const isForSameActivity = existingOnTime?.activityId === activity.id;
+                  const isForOther = existingOnTime && !isForSameActivity;
                   const isSelected = selectedSlot === slotKey;
 
                   return (
@@ -329,22 +516,39 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                       key={slotKey}
                       type="button"
                       onClick={() => setSelectedSlot(slotKey)}
-                      className={`p-3 rounded-xl border text-left transition-all relative ${
+                      className={`p-3 rounded-xl border text-left transition-all relative cursor-pointer ${
                         isSelected
-                          ? 'border-amber-600 bg-amber-50/60 ring-2 ring-amber-600/20'
-                          : isOccupied
-                          ? 'border-slate-200 bg-slate-100/60 opacity-60'
+                          ? isForSameActivity
+                            ? 'border-emerald-600 bg-emerald-50/80 ring-2 ring-emerald-500/20'
+                            : isForOther
+                            ? 'border-rose-400 bg-rose-50/50 ring-2 ring-rose-400/20'
+                            : 'border-amber-600 bg-amber-50/60 ring-2 ring-amber-600/20'
+                          : isForSameActivity
+                          ? 'border-emerald-300 bg-emerald-50/40 hover:bg-emerald-50'
+                          : isForOther
+                          ? 'border-slate-200 bg-slate-100/70 opacity-60'
                           : 'border-slate-200 bg-white hover:border-slate-300'
                       }`}
                     >
                       <div className="mb-1 text-slate-700">
-                        <info.Icon className="w-4 h-4 text-amber-600" />
+                        <info.Icon
+                          className={`w-4 h-4 ${
+                            isForSameActivity ? 'text-emerald-600' : 'text-amber-600'
+                          }`}
+                        />
                       </div>
                       <div className="text-xs font-bold text-slate-900">{info.label}</div>
                       <div className="text-[10px] text-slate-500 font-mono">{info.time}</div>
-                      {isOccupied && (
-                        <span className="block text-[10px] text-red-600 font-semibold mt-1">
-                          Déjà pris
+
+                      {isForSameActivity && (
+                        <span className="inline-block text-[10px] text-emerald-800 font-bold bg-emerald-100 px-1.5 py-0.5 rounded mt-1.5 border border-emerald-300">
+                          Rejoindre (avec {existingOnTime.friendName})
+                        </span>
+                      )}
+
+                      {isForOther && (
+                        <span className="inline-block text-[10px] text-rose-700 font-semibold bg-rose-50 px-1.5 py-0.5 rounded mt-1.5 border border-rose-200">
+                          Occupé (autre sortie)
                         </span>
                       )}
                     </button>
@@ -352,11 +556,31 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 })}
               </div>
 
-              {currentSlotBooked && (
-                <p className="text-xs text-amber-800 bg-amber-50 p-2.5 rounded-lg border border-amber-200 mt-2 flex items-start gap-2">
-                  <Info className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                  <span>Ce créneau a déjà une activité validée, mais vous pouvez quand même proposer si vous souhaitez vous joindre au groupe ou proposer une alternative.</span>
-                </p>
+              {/* Informative Status Banner based on slot */}
+              {isCurrentSlotForThisActivity && currentMatchingSlot && (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 mt-2.5 flex items-start gap-2.5">
+                  <Users className="w-4 h-4 text-emerald-700 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold block">
+                      Session collective avec {currentMatchingSlot.friendName}
+                    </span>
+                    <span className="text-emerald-800 block mt-0.5">
+                      Indiquez simplement votre prénom ci-dessous pour vous ajouter à cette sortie !
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {isCurrentSlotForOtherActivity && currentMatchingSlot && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 mt-2.5 flex items-start gap-2.5">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold block">Créneau déjà réservé pour une autre activité</span>
+                    <span className="text-rose-700 block mt-0.5">
+                      L'organisateur est déjà pris par « {currentMatchingSlot.activityTitle} ». Veuillez choisir une autre date ou un autre créneau.
+                    </span>
+                  </div>
+                </div>
               )}
             </div>
 
@@ -364,11 +588,12 @@ export const BookingModal: React.FC<BookingModalProps> = ({
             <div className="space-y-3">
               <label className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <User className="w-4 h-4 text-amber-600" />
-                3. Tes coordonnées & motivation
+                3. Tes coordonnées & mot pour l'équipe
               </label>
 
               <div>
                 <input
+                  id="booking-friend-name-input"
                   type="text"
                   required
                   placeholder="Ton prénom ou surnom *"
@@ -394,29 +619,53 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               <div>
                 <textarea
                   rows={2}
-                  placeholder="Un petit mot ? (ex: 'Trop chaud pour tester !', 'Je ramène mon jeu préféré', ...)"
+                  placeholder={
+                    isCurrentSlotForThisActivity
+                      ? "Un mot pour le groupe ? (ex: 'Trop chaud pour venir avec vous !', ...)"
+                      : "Un petit mot ? (ex: 'Trop chaud pour tester !', 'Je ramène mon jeu préféré', ...)"
+                  }
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
                   className="w-full px-3.5 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-all resize-none"
                 />
               </div>
 
-              {errorMsg && (
-                <p className="text-xs text-red-600 font-medium">{errorMsg}</p>
-              )}
+              {errorMsg && <p className="text-xs text-rose-600 font-medium">{errorMsg}</p>}
             </div>
 
             {/* Submit button */}
             <div className="pt-2">
               <button
                 type="submit"
-                className="w-full py-3.5 px-6 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-xl text-sm transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 group cursor-pointer"
+                disabled={isSubmitting || !!isCurrentSlotForOtherActivity}
+                className={`w-full py-3.5 px-6 font-semibold rounded-xl text-sm transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                  isCurrentSlotForThisActivity
+                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                    : 'bg-slate-900 hover:bg-slate-800 text-white'
+                }`}
               >
-                <span>Envoyer ma proposition</span>
-                <Send className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Enregistrement...</span>
+                  </>
+                ) : isCurrentSlotForThisActivity && currentMatchingSlot ? (
+                  <>
+                    <UserPlus className="w-4 h-4" />
+                    <span>Rejoindre la sortie (avec {currentMatchingSlot.friendName})</span>
+                  </>
+                ) : (
+                  <>
+                    <span>Envoyer ma proposition</span>
+                    <Send className="w-4 h-4" />
+                  </>
+                )}
               </button>
+
               <p className="text-center text-[11px] text-slate-500 mt-2">
-                Je recevrai ta demande et pourrai l’insérer directement dans mon emploi du temps !
+                {isCurrentSlotForThisActivity
+                  ? 'Votre participation sera immédiatement ajoutée et notifiée à l’organisateur !'
+                  : 'L’organisateur recevra votre demande et pourra l’insérer directement dans son emploi du temps !'}
               </p>
             </div>
           </form>
