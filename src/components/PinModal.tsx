@@ -1,32 +1,54 @@
 import React, { useState } from 'react';
-import { Lock, KeyRound, X, Check, ShieldCheck, AlertCircle } from 'lucide-react';
+import { Lock, KeyRound, X, Check, ShieldCheck, AlertCircle, Loader2 } from 'lucide-react';
 
 interface PinModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  savedPin: string;
+  onVerifyPin: (pin: string) => Promise<boolean>;
+  savedPin?: string;
 }
 
 export const PinModal: React.FC<PinModalProps> = ({
   isOpen,
   onClose,
   onSuccess,
+  onVerifyPin,
   savedPin,
 }) => {
   const [pin, setPin] = useState('');
   const [error, setError] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (pin === savedPin) {
-      setError(false);
-      onSuccess();
-    } else {
-      setError(true);
-      setPin('');
+    if (!pin.trim()) return;
+
+    setIsVerifying(true);
+    setError(false);
+
+    try {
+      const isValid = await onVerifyPin(pin.trim());
+      if (isValid) {
+        setError(false);
+        onSuccess();
+      } else {
+        setError(true);
+        setPin('');
+      }
+    } catch {
+      // Local fallback if offline
+      if (savedPin && pin.trim() === savedPin.trim()) {
+        setError(false);
+        onSuccess();
+      } else {
+        setError(true);
+        setPin('');
+      }
+    } finally {
+      setIsVerifying(false);
     }
   };
 
@@ -41,6 +63,7 @@ export const PinModal: React.FC<PinModalProps> = ({
             <span>Accès Organisateur</span>
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="text-slate-400 hover:text-slate-600 p-1 rounded-md cursor-pointer"
           >
@@ -59,6 +82,7 @@ export const PinModal: React.FC<PinModalProps> = ({
                 type="password"
                 maxLength={8}
                 autoFocus
+                disabled={isVerifying}
                 placeholder="Code d'accès"
                 value={pin}
                 onChange={(e) => {
@@ -83,17 +107,28 @@ export const PinModal: React.FC<PinModalProps> = ({
           <div className="flex items-center gap-2 pt-1">
             <button
               type="button"
+              disabled={isVerifying}
               onClick={onClose}
-              className="w-full py-2.5 text-slate-600 hover:bg-slate-100 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+              className="w-full py-2.5 text-slate-600 hover:bg-slate-100 text-xs font-semibold rounded-xl transition-colors cursor-pointer disabled:opacity-50"
             >
               Annuler
             </button>
             <button
               type="submit"
-              className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
+              disabled={isVerifying || !pin.trim()}
+              className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50"
             >
-              <ShieldCheck className="w-4 h-4" />
-              <span>Valider</span>
+              {isVerifying ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Vérification...</span>
+                </>
+              ) : (
+                <>
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>Valider</span>
+                </>
+              )}
             </button>
           </div>
         </form>
@@ -105,29 +140,24 @@ export const PinModal: React.FC<PinModalProps> = ({
 interface ChangePinModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (newPin: string) => void;
-  currentPin: string;
+  onSavePin: (currentPin: string, newPin: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 export const ChangePinModal: React.FC<ChangePinModalProps> = ({
   isOpen,
   onClose,
-  onSave,
-  currentPin,
+  onSavePin,
 }) => {
   const [oldPin, setOldPin] = useState('');
   const [newPin, setNewPin] = useState('');
   const [confirmPin, setConfirmPin] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (oldPin !== currentPin) {
-      setError("L'ancien code PIN est incorrect.");
-      return;
-    }
     if (newPin.trim().length < 4) {
       setError('Le nouveau code doit contenir au moins 4 caractères.');
       return;
@@ -137,8 +167,21 @@ export const ChangePinModal: React.FC<ChangePinModalProps> = ({
       return;
     }
 
-    onSave(newPin.trim());
-    onClose();
+    setIsSubmitting(true);
+    setError(null);
+
+    try {
+      const res = await onSavePin(oldPin.trim(), newPin.trim());
+      if (res.success) {
+        onClose();
+      } else {
+        setError(res.error || "Impossible de modifier le code PIN.");
+      }
+    } catch {
+      setError("Erreur de connexion avec le serveur.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -152,6 +195,7 @@ export const ChangePinModal: React.FC<ChangePinModalProps> = ({
             <span>Modifier le code PIN</span>
           </div>
           <button
+            type="button"
             onClick={onClose}
             className="text-slate-400 hover:text-slate-600 p-1 rounded-md cursor-pointer"
           >
@@ -167,6 +211,7 @@ export const ChangePinModal: React.FC<ChangePinModalProps> = ({
             <input
               type="password"
               placeholder="Code actuel"
+              disabled={isSubmitting}
               value={oldPin}
               onChange={(e) => {
                 setOldPin(e.target.value);
@@ -184,6 +229,7 @@ export const ChangePinModal: React.FC<ChangePinModalProps> = ({
             <input
               type="password"
               placeholder="Nouveau code"
+              disabled={isSubmitting}
               value={newPin}
               onChange={(e) => {
                 setNewPin(e.target.value);
@@ -201,6 +247,7 @@ export const ChangePinModal: React.FC<ChangePinModalProps> = ({
             <input
               type="password"
               placeholder="Confirmez..."
+              disabled={isSubmitting}
               value={confirmPin}
               onChange={(e) => {
                 setConfirmPin(e.target.value);
@@ -221,17 +268,28 @@ export const ChangePinModal: React.FC<ChangePinModalProps> = ({
           <div className="flex items-center gap-2 pt-2">
             <button
               type="button"
+              disabled={isSubmitting}
               onClick={onClose}
-              className="w-full py-2.5 text-slate-600 hover:bg-slate-100 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+              className="w-full py-2.5 text-slate-600 hover:bg-slate-100 text-xs font-semibold rounded-xl transition-colors cursor-pointer disabled:opacity-50"
             >
               Annuler
             </button>
             <button
               type="submit"
-              className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
+              disabled={isSubmitting}
+              className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50"
             >
-              <Check className="w-4 h-4" />
-              <span>Enregistrer le PIN</span>
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Enregistrement...</span>
+                </>
+              ) : (
+                <>
+                  <Check className="w-4 h-4" />
+                  <span>Enregistrer le PIN</span>
+                </>
+              )}
             </button>
           </div>
         </form>
@@ -239,4 +297,3 @@ export const ChangePinModal: React.FC<ChangePinModalProps> = ({
     </div>
   );
 };
-

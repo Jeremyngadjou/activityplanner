@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, Proposal, ScheduleSlot, AppView, OrganizerTab } from './types';
+import { Activity, Proposal, ScheduleSlot, AppNotification, AppView, OrganizerTab } from './types';
 import { INITIAL_ACTIVITIES } from './data/defaultActivities';
 import { ActivityCard } from './components/ActivityCard';
 import { BookingModal } from './components/BookingModal';
@@ -7,6 +7,7 @@ import { OrganizerInbox } from './components/OrganizerInbox';
 import { OrganizerCalendar } from './components/OrganizerCalendar';
 import { OrganizerActivityManager } from './components/OrganizerActivityManager';
 import { OrganizerAIStudio } from './components/OrganizerAIStudio';
+import { OrganizerNotifications } from './components/OrganizerNotifications';
 import {
   Clock,
   Sparkles,
@@ -24,6 +25,8 @@ import {
   Unlock,
   KeyRound,
   X,
+  Bell,
+  Loader2,
 } from 'lucide-react';
 import { PinModal, ChangePinModal } from './components/PinModal';
 import { initAuth, logoutGoogle } from './services/calendarService';
@@ -92,7 +95,11 @@ export default function App() {
     return new Date().getMonth();
   });
 
-  const handleSetActiveMonth = (year: number, month: number) => {
+  // Centralized Notifications State
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [latestToast, setLatestToast] = useState<AppNotification | null>(null);
+
+  const handleSetActiveMonth = async (year: number, month: number) => {
     setActiveYear(year);
     setActiveMonth(month);
     localStorage.setItem('rdv_target_year', String(year));
@@ -100,9 +107,17 @@ export default function App() {
     const url = new URL(window.location.href);
     url.searchParams.set('m', `${year}-${String(month + 1).padStart(2, '0')}`);
     window.history.replaceState({}, '', url.toString());
+
+    try {
+      await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetYear: year, targetMonth: month }),
+      });
+    } catch {}
   };
 
-  // Organizer Security (PIN protection)
+  // Organizer Security (Centralized PIN protection)
   const STORAGE_KEY_PIN = 'rdv_nov_pin_v1';
   const STORAGE_KEY_AUTH = 'rdv_nov_auth_v1';
   const [savedPin, setSavedPin] = useState<string>(() => {
@@ -113,9 +128,9 @@ export default function App() {
   });
   const [showPinModal, setShowPinModal] = useState(false);
   const [showChangePinModal, setShowChangePinModal] = useState(false);
-  const [newPinInput, setNewPinInput] = useState('');
   const [gatePin, setGatePin] = useState('');
   const [gateError, setGateError] = useState(false);
+  const [isGateVerifying, setIsGateVerifying] = useState(false);
 
   const handleUnlockSuccess = () => {
     setIsOrganizerUnlocked(true);
@@ -126,9 +141,31 @@ export default function App() {
     setGateError(false);
   };
 
-  const handleGateSubmit = (e: React.FormEvent) => {
+  // Centralized PIN verification across all devices
+  const handleVerifyPin = async (pin: string): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/auth/verify-pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return !!data.valid;
+      }
+    } catch {}
+    // Fallback if offline
+    return pin === savedPin;
+  };
+
+  const handleGateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (gatePin === savedPin) {
+    if (!gatePin.trim()) return;
+    setIsGateVerifying(true);
+    setGateError(false);
+    const isValid = await handleVerifyPin(gatePin.trim());
+    setIsGateVerifying(false);
+    if (isValid) {
       handleUnlockSuccess();
     } else {
       setGateError(true);
@@ -142,18 +179,79 @@ export default function App() {
     setCurrentView('friend');
   };
 
-  const handleChangePin = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newPinInput.trim().length >= 4) {
-      setSavedPin(newPinInput.trim());
-      localStorage.setItem(STORAGE_KEY_PIN, newPinInput.trim());
-      setShowChangePinModal(false);
-      setNewPinInput('');
+  const handleChangePinCentralized = async (currentPin: string, newPin: string) => {
+    try {
+      const res = await fetch('/api/auth/change-pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPin, newPin }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSavedPin(newPin);
+        localStorage.setItem(STORAGE_KEY_PIN, newPin);
+        loadServerData(false);
+        return { success: true };
+      }
+      return { success: false, error: data.error || 'Erreur lors du changement de PIN.' };
+    } catch {
+      setSavedPin(newPin);
+      localStorage.setItem(STORAGE_KEY_PIN, newPin);
+      return { success: true };
     }
   };
 
-  // Fetch initial data with automatic fallback for static hosts (Vercel)
-  const loadServerData = async () => {
+  // Centralized Notification Handlers
+  const handleMarkNotifAsRead = async (id: string) => {
+    setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+    try {
+      await fetch(`/api/notifications/${id}/read`, { method: 'POST' });
+    } catch {}
+  };
+
+  const handleMarkAllNotifsAsRead = async () => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    try {
+      await fetch('/api/notifications/read-all', { method: 'POST' });
+    } catch {}
+  };
+
+  const handleDeleteNotif = async (id: string) => {
+    setNotifications((prev) => prev.filter((n) => n.id !== id));
+    try {
+      await fetch(`/api/notifications/${id}`, { method: 'DELETE' });
+    } catch {}
+  };
+
+  const handleClearAllNotifs = async () => {
+    setNotifications([]);
+    try {
+      await fetch('/api/notifications/clear', { method: 'POST' });
+    } catch {}
+  };
+
+  const handleNavigateToProposal = (_proposalId: string) => {
+    if (!isOrganizerUnlocked) {
+      setShowPinModal(true);
+      return;
+    }
+    setCurrentView('organizer');
+    setOrganizerTab('inbox');
+  };
+
+  // Auto-dismiss toast banner after 6s
+  useEffect(() => {
+    if (latestToast) {
+      const timer = setTimeout(() => {
+        setLatestToast(null);
+      }, 6000);
+      return () => clearTimeout(timer);
+    }
+  }, [latestToast]);
+
+  // Fetch initial and synced data
+  const loadServerData = async (showLoading = true) => {
+    if (showLoading) setIsLoading(true);
     try {
       const res = await fetch('/api/data');
       if (res.ok) {
@@ -162,6 +260,32 @@ export default function App() {
           setActivities(data.activities && data.activities.length > 0 ? data.activities : INITIAL_ACTIVITIES);
           setProposals(data.proposals || []);
           setScheduleSlots(data.scheduleSlots || []);
+
+          if (Array.isArray(data.notifications)) {
+            setNotifications((prev) => {
+              const prevIds = new Set(prev.map((n) => n.id));
+              const incomingFresh = data.notifications.filter(
+                (n: AppNotification) => !n.read && !prevIds.has(n.id)
+              );
+              // Trigger live banner if new proposal arrived during usage
+              if (incomingFresh.length > 0 && !showLoading) {
+                setLatestToast(incomingFresh[0]);
+              }
+              return data.notifications;
+            });
+          }
+
+          if (data.settings) {
+            const params = new URLSearchParams(window.location.search);
+            if (!params.get('m')) {
+              if (typeof data.settings.targetYear === 'number') {
+                setActiveYear(data.settings.targetYear);
+              }
+              if (typeof data.settings.targetMonth === 'number') {
+                setActiveMonth(data.settings.targetMonth);
+              }
+            }
+          }
           return;
         }
       }
@@ -177,9 +301,17 @@ export default function App() {
       const savedSlots = localStorage.getItem('rdv_nov_slots');
       setScheduleSlots(savedSlots ? JSON.parse(savedSlots) : []);
     } finally {
-      setIsLoading(false);
+      if (showLoading) setIsLoading(false);
     }
   };
+
+  // Centralized polling every 6 seconds to keep notifications and proposals in sync across devices
+  useEffect(() => {
+    const interval = setInterval(() => {
+      loadServerData(false);
+    }, 6000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Sync to localStorage as backup
   useEffect(() => {
@@ -259,6 +391,9 @@ export default function App() {
         const resData = await res.json();
         if (resData.success && resData.proposal) {
           setProposals((prev) => [resData.proposal, ...prev]);
+          if (resData.notification) {
+            setNotifications((prev) => [resData.notification, ...prev]);
+          }
           return;
         }
       }
@@ -272,6 +407,20 @@ export default function App() {
         createdAt: new Date().toISOString(),
       };
       setProposals((prev) => [localProp, ...prev]);
+      const localNotif: AppNotification = {
+        id: `notif-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        type: 'proposal_received',
+        title: 'Nouvelle proposition',
+        message: `${localProp.friendName || 'Un ami'} a proposé : ${localProp.activityTitle}`,
+        proposalId: localProp.id,
+        friendName: localProp.friendName,
+        activityTitle: localProp.activityTitle,
+        date: localProp.date,
+        slot: localProp.slot,
+        createdAt: new Date().toISOString(),
+        read: false,
+      };
+      setNotifications((prev) => [localNotif, ...prev]);
     }
   };
 
@@ -573,6 +722,15 @@ export default function App() {
 
             {isOrganizerUnlocked ? (
               <div className="flex items-center gap-1.5">
+                <OrganizerNotifications
+                  notifications={notifications}
+                  onMarkAsRead={handleMarkNotifAsRead}
+                  onMarkAllAsRead={handleMarkAllNotifsAsRead}
+                  onDeleteNotification={handleDeleteNotif}
+                  onClearAll={handleClearAllNotifs}
+                  onNavigateToProposal={handleNavigateToProposal}
+                />
+
                 <div className="p-1 bg-slate-100 rounded-xl border border-slate-200 inline-flex text-xs font-semibold">
                   <button
                     onClick={() => setCurrentView('friend')}
@@ -803,9 +961,17 @@ export default function App() {
               <div className="pt-1 flex flex-col gap-2">
                 <button
                   type="submit"
-                  className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer shadow-xs"
+                  disabled={isGateVerifying || !gatePin.trim()}
+                  className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer shadow-xs flex items-center justify-center gap-1.5 disabled:opacity-50"
                 >
-                  Valider
+                  {isGateVerifying ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Vérification...</span>
+                    </>
+                  ) : (
+                    <span>Valider</span>
+                  )}
                 </button>
                 <button
                   type="button"
@@ -899,7 +1065,7 @@ export default function App() {
                 </button>
 
                 <button
-                  onClick={loadServerData}
+                  onClick={() => loadServerData(true)}
                   className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
                   title="Actualiser les données"
                 >
@@ -1122,18 +1288,52 @@ export default function App() {
         isOpen={showPinModal}
         onClose={() => setShowPinModal(false)}
         onSuccess={handleUnlockSuccess}
+        onVerifyPin={handleVerifyPin}
         savedPin={savedPin}
       />
 
       <ChangePinModal
         isOpen={showChangePinModal}
         onClose={() => setShowChangePinModal(false)}
-        onSave={(newPin) => {
-          setSavedPin(newPin);
-          localStorage.setItem(STORAGE_KEY_PIN, newPin);
-        }}
-        currentPin={savedPin}
+        onSavePin={handleChangePinCentralized}
       />
+
+      {/* Real-time Centralized Notification Toast Banner */}
+      {latestToast && (
+        <aside
+          role="status"
+          aria-live="polite"
+          className="fixed top-20 right-4 sm:right-8 z-50 max-w-sm w-full bg-white rounded-2xl shadow-2xl border border-amber-300 p-4 flex items-start gap-3 animate-in slide-in-from-top-4 duration-200"
+        >
+          <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+            <Bell className="w-4 h-4 text-amber-700 animate-bounce" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-bold text-slate-900">{latestToast.title}</p>
+            <p className="text-xs text-slate-600 mt-0.5 line-clamp-2">{latestToast.message}</p>
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  handleMarkNotifAsRead(latestToast.id);
+                  handleNavigateToProposal(latestToast.proposalId || '');
+                  setLatestToast(null);
+                }}
+                className="text-xs font-semibold text-amber-800 hover:text-amber-950 underline cursor-pointer"
+              >
+                Voir dans les propositions
+              </button>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setLatestToast(null)}
+            className="text-slate-400 hover:text-slate-600 p-1 rounded-md cursor-pointer"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </aside>
+      )}
     </div>
   );
 }

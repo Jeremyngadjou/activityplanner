@@ -53,5 +53,24 @@ export interface ScheduleSlot {
   note?: string;
 }
 
+export interface AppNotification {
+  id: string;
+  type: 'proposal_received' | 'proposal_accepted' | 'proposal_declined' | 'system';
+  title: string;
+  message: string;
+  proposalId?: string;
+  friendName?: string;
+  activityTitle?: string;
+  date?: string;
+  slot?: SlotType;
+  createdAt: string;
+  read: boolean;
+}
+
+export interface AppSettings {
+  targetYear: number;
+  targetMonth: number;
+}
+
 export type AppView = 'friend' | 'organizer';
 export type OrganizerTab = 'inbox' | 'calendar' | 'activities' | 'ai-studio';

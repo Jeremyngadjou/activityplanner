@@ -27,18 +27,57 @@ const DATA_FILE = path.join(dataDir, 'store.json');
 app.use(express.json({ limit: '10mb' }));
 
 // Helper to safely read and write store data
+interface AppNotification {
+  id: string;
+  type: 'proposal_received' | 'proposal_accepted' | 'proposal_declined' | 'system';
+  title: string;
+  message: string;
+  proposalId?: string;
+  friendName?: string;
+  activityTitle?: string;
+  date?: string;
+  slot?: string;
+  createdAt: string;
+  read: boolean;
+}
+
 interface AppStore {
+  organizerPin: string;
+  settings: {
+    targetYear: number;
+    targetMonth: number;
+  };
   activities: any[];
   proposals: any[];
   scheduleSlots: any[];
+  notifications: AppNotification[];
 }
 
 const readStore = async (): Promise<AppStore> => {
+  const defaultData: AppStore = {
+    organizerPin: '1126',
+    settings: {
+      targetYear: new Date().getFullYear(),
+      targetMonth: new Date().getMonth(),
+    },
+    activities: [],
+    proposals: [],
+    scheduleSlots: [],
+    notifications: [],
+  };
+
   try {
     const raw = await fs.promises.readFile(DATA_FILE, 'utf-8');
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    return {
+      organizerPin: parsed.organizerPin || '1126',
+      settings: parsed.settings || defaultData.settings,
+      activities: parsed.activities || [],
+      proposals: parsed.proposals || [],
+      scheduleSlots: parsed.scheduleSlots || [],
+      notifications: parsed.notifications || [],
+    };
   } catch (err) {
-    const defaultData: AppStore = { activities: [], proposals: [], scheduleSlots: [] };
     await fs.promises.writeFile(DATA_FILE, JSON.stringify(defaultData, null, 2), 'utf-8');
     return defaultData;
   }
@@ -72,7 +111,73 @@ const getGenAI = () => {
 app.get('/api/data', async (_req, res) => {
   try {
     const store = await readStore();
-    res.json({ success: true, ...store });
+    res.json({
+      success: true,
+      activities: store.activities,
+      proposals: store.proposals,
+      scheduleSlots: store.scheduleSlots,
+      notifications: store.notifications,
+      settings: store.settings,
+    });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Centralized PIN verification (organizer login from any device)
+app.post('/api/auth/verify-pin', async (req, res) => {
+  try {
+    const { pin } = req.body;
+    const store = await readStore();
+    const isValid = String(pin || '').trim() === String(store.organizerPin || '1126').trim();
+    res.json({ success: true, valid: isValid });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Centralized PIN change (synchronized across all devices)
+app.post('/api/auth/change-pin', async (req, res) => {
+  try {
+    const { currentPin, newPin } = req.body;
+    const store = await readStore();
+    if (String(currentPin || '').trim() !== String(store.organizerPin || '1126').trim()) {
+      return res.status(400).json({ success: false, error: "L'ancien code PIN est incorrect." });
+    }
+    const cleanNewPin = String(newPin || '').trim();
+    if (cleanNewPin.length < 4) {
+      return res.status(400).json({
+        success: false,
+        error: 'Le nouveau code doit contenir au moins 4 caractères.',
+      });
+    }
+
+    store.organizerPin = cleanNewPin;
+    store.notifications.unshift({
+      id: `notif-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      type: 'system',
+      title: 'Sécurité mise à jour',
+      message: 'Le code PIN organisateur a été mis à jour et synchronisé sur tous vos appareils.',
+      createdAt: new Date().toISOString(),
+      read: false,
+    });
+
+    await writeStore(store);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Centralized Settings (target month/year synchronized)
+app.put('/api/settings', async (req, res) => {
+  try {
+    const { targetYear, targetMonth } = req.body;
+    const store = await readStore();
+    if (typeof targetYear === 'number') store.settings.targetYear = targetYear;
+    if (typeof targetMonth === 'number') store.settings.targetMonth = targetMonth;
+    await writeStore(store);
+    res.json({ success: true, settings: store.settings });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -136,8 +241,28 @@ app.post('/api/proposals', async (req, res) => {
       createdAt: new Date().toISOString(),
     };
     store.proposals.unshift(newProposal);
+
+    // Create centralized notification for organizer
+    const notif: AppNotification = {
+      id: `notif-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      type: 'proposal_received',
+      title: 'Nouvelle proposition',
+      message: `${newProposal.friendName || 'Un ami'} a proposé : ${newProposal.activityTitle || 'Activité'}`,
+      proposalId: newProposal.id,
+      friendName: newProposal.friendName,
+      activityTitle: newProposal.activityTitle,
+      date: newProposal.date,
+      slot: newProposal.slot,
+      createdAt: new Date().toISOString(),
+      read: false,
+    };
+    store.notifications.unshift(notif);
+    if (store.notifications.length > 100) {
+      store.notifications = store.notifications.slice(0, 100);
+    }
+
     await writeStore(store);
-    res.json({ success: true, proposal: newProposal });
+    res.json({ success: true, proposal: newProposal, notification: notif });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -171,6 +296,10 @@ app.post('/api/proposals/:id/accept', async (req, res) => {
       note: proposal.note,
     });
 
+    // Mark corresponding notification as read
+    const notif = store.notifications.find((n) => n.proposalId === id);
+    if (notif) notif.read = true;
+
     await writeStore(store);
     res.json({ success: true, proposal, scheduleSlots: store.scheduleSlots });
   } catch (err: any) {
@@ -195,8 +324,71 @@ app.post('/api/proposals/:id/decline', async (req, res) => {
     // Remove from schedule slots if it was previously accepted
     store.scheduleSlots = store.scheduleSlots.filter((s) => s.proposalId !== id);
 
+    // Mark corresponding notification as read
+    const notif = store.notifications.find((n) => n.proposalId === id);
+    if (notif) notif.read = true;
+
     await writeStore(store);
     res.json({ success: true, proposal, scheduleSlots: store.scheduleSlots });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Centralized Notifications endpoints
+app.get('/api/notifications', async (_req, res) => {
+  try {
+    const store = await readStore();
+    res.json({ success: true, notifications: store.notifications });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/notifications/:id/read', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const store = await readStore();
+    const notif = store.notifications.find((n) => n.id === id);
+    if (notif) {
+      notif.read = true;
+      await writeStore(store);
+    }
+    res.json({ success: true, notifications: store.notifications });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/notifications/read-all', async (_req, res) => {
+  try {
+    const store = await readStore();
+    store.notifications.forEach((n) => (n.read = true));
+    await writeStore(store);
+    res.json({ success: true, notifications: store.notifications });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.delete('/api/notifications/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const store = await readStore();
+    store.notifications = store.notifications.filter((n) => n.id !== id);
+    await writeStore(store);
+    res.json({ success: true, notifications: store.notifications });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.post('/api/notifications/clear', async (_req, res) => {
+  try {
+    const store = await readStore();
+    store.notifications = [];
+    await writeStore(store);
+    res.json({ success: true, notifications: [] });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }
@@ -220,7 +412,17 @@ app.delete('/api/slots', async (req, res) => {
 // POST reset/clear all data (if organizer wants complete wipe)
 app.post('/api/clear-all', async (_req, res) => {
   try {
-    const empty: AppStore = { activities: [], proposals: [], scheduleSlots: [] };
+    const empty: AppStore = {
+      organizerPin: '1126',
+      settings: {
+        targetYear: new Date().getFullYear(),
+        targetMonth: new Date().getMonth(),
+      },
+      activities: [],
+      proposals: [],
+      scheduleSlots: [],
+      notifications: [],
+    };
     await writeStore(empty);
     res.json({ success: true, ...empty });
   } catch (err: any) {
