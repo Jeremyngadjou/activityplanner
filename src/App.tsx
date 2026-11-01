@@ -27,6 +27,8 @@ import {
   X,
   Bell,
   Loader2,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { PinModal, ChangePinModal } from './components/PinModal';
 import { initAuth, logoutGoogle } from './services/calendarService';
@@ -68,17 +70,25 @@ export default function App() {
   const [googleToken, setGoogleToken] = useState<string | null>(null);
 
   // Target planning month chosen by the organizer (or loaded via ?m=YYYY-MM)
+  // Tool foundation starting month is strictly November 2026 (index 10)
   const [activeYear, setActiveYear] = useState<number>(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const mParam = params.get('m');
       if (mParam && /^\d{4}-\d{2}$/.test(mParam)) {
-        return parseInt(mParam.split('-')[0], 10);
+        const y = parseInt(mParam.split('-')[0], 10);
+        const m = parseInt(mParam.split('-')[1], 10) - 1;
+        if (y > 2026 || (y === 2026 && m >= 10)) {
+          return y;
+        }
       }
       const saved = localStorage.getItem('rdv_target_year');
-      if (saved) return parseInt(saved, 10);
+      if (saved) {
+        const y = parseInt(saved, 10);
+        if (y >= 2026) return y;
+      }
     }
-    return new Date().getFullYear();
+    return 2026;
   });
 
   const [activeMonth, setActiveMonth] = useState<number>(() => {
@@ -86,13 +96,19 @@ export default function App() {
       const params = new URLSearchParams(window.location.search);
       const mParam = params.get('m');
       if (mParam && /^\d{4}-\d{2}$/.test(mParam)) {
+        const y = parseInt(mParam.split('-')[0], 10);
         const m = parseInt(mParam.split('-')[1], 10) - 1;
-        if (m >= 0 && m <= 11) return m;
+        if (y > 2026 || (y === 2026 && m >= 10)) {
+          if (m >= 0 && m <= 11) return m;
+        }
       }
       const saved = localStorage.getItem('rdv_target_month');
-      if (saved) return parseInt(saved, 10);
+      if (saved) {
+        const m = parseInt(saved, 10);
+        if (m >= 0 && m <= 11) return m;
+      }
     }
-    return new Date().getMonth();
+    return 10; // Novembre 2026 (starting month)
   });
 
   // Centralized Notifications State
@@ -100,21 +116,99 @@ export default function App() {
   const [latestToast, setLatestToast] = useState<AppNotification | null>(null);
 
   const handleSetActiveMonth = async (year: number, month: number) => {
-    setActiveYear(year);
-    setActiveMonth(month);
-    localStorage.setItem('rdv_target_year', String(year));
-    localStorage.setItem('rdv_target_month', String(month));
+    let safeYear = year;
+    let safeMonth = month;
+    // Strictly prevent navigating before November 2026
+    if (safeYear < 2026 || (safeYear === 2026 && safeMonth < 10)) {
+      safeYear = 2026;
+      safeMonth = 10;
+    }
+
+    setActiveYear(safeYear);
+    setActiveMonth(safeMonth);
+    localStorage.setItem('rdv_target_year', String(safeYear));
+    localStorage.setItem('rdv_target_month', String(safeMonth));
     const url = new URL(window.location.href);
-    url.searchParams.set('m', `${year}-${String(month + 1).padStart(2, '0')}`);
+    url.searchParams.set('m', `${safeYear}-${String(safeMonth + 1).padStart(2, '0')}`);
     window.history.replaceState({}, '', url.toString());
 
     try {
       await fetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ targetYear: year, targetMonth: month }),
+        body: JSON.stringify({ targetYear: safeYear, targetMonth: safeMonth }),
       });
     } catch {}
+  };
+
+  const isAtMinMonth = activeYear <= 2026 && activeMonth <= 10;
+
+  const handlePrevMonth = () => {
+    if (isAtMinMonth) return;
+    if (activeMonth === 0) {
+      handleSetActiveMonth(activeYear - 1, 11);
+    } else {
+      handleSetActiveMonth(activeYear, activeMonth - 1);
+    }
+  };
+
+  const handleNextMonth = () => {
+    if (activeMonth === 11) {
+      handleSetActiveMonth(activeYear + 1, 0);
+    } else {
+      handleSetActiveMonth(activeYear, activeMonth + 1);
+    }
+  };
+
+  // Generate selectable months from Nov 2026 onwards
+  const guestAvailableMonths: { key: string; label: string; year: number; month: number }[] = [];
+  for (let y = 2026; y <= 2027; y++) {
+    const startM = y === 2026 ? 10 : 0;
+    for (let m = startM; m < 12; m++) {
+      guestAvailableMonths.push({
+        key: `${y}-${String(m + 1).padStart(2, '0')}`,
+        label: `${MONTH_NAMES[m]} ${y}`,
+        year: y,
+        month: m,
+      });
+    }
+  }
+
+  // Handle JSON Import
+  const handleImportActivities = async (
+    monthKey: string,
+    importedList: Activity[],
+    mode: 'merge' | 'replace'
+  ) => {
+    try {
+      const res = await fetch('/api/activities/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ monthKey, activities: importedList, mode }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success && Array.isArray(data.activities)) {
+        setActivities(data.activities);
+        loadServerData(false);
+      } else {
+        throw new Error(data.error || "Échec de l'import");
+      }
+    } catch {
+      const cleanMonthKey = monthKey || '2026-11';
+      const formatted = importedList.map((item, idx) => ({
+        ...item,
+        id: item.id || `act-imp-${Date.now()}-${idx}`,
+        monthKey: cleanMonthKey,
+      }));
+      if (mode === 'replace') {
+        setActivities((prev) => [
+          ...formatted,
+          ...prev.filter((a) => (a.monthKey || '2026-11') !== cleanMonthKey),
+        ]);
+      } else {
+        setActivities((prev) => [...formatted, ...prev]);
+      }
+    }
   };
 
   // Organizer Security (Centralized PIN protection)
@@ -608,7 +702,15 @@ export default function App() {
   // Category list for filters
   const categoriesList = ['all', 'Gastronomie', 'Sport', 'Culture', 'Soirée', 'Plein Air', 'Atelier', 'Jeux'];
 
-  const filteredActivities = activities.filter((act) => {
+  const activeMonthKey = `${activeYear}-${String(activeMonth + 1).padStart(2, '0')}`;
+
+  // Activities scoped to the currently displayed month
+  const monthActivities = activities.filter((act) => {
+    const actMonth = act.monthKey || '2026-11';
+    return actMonth === activeMonthKey || act.monthKey === 'all';
+  });
+
+  const filteredActivities = monthActivities.filter((act) => {
     const matchesCategory = selectedCategory === 'all' || act.category === selectedCategory;
     const matchesSearch =
       act.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -795,42 +897,78 @@ export default function App() {
           /* FRIEND VIEW (Vue Invité pour choisir et proposer)        */
           /* ======================================================== */
           <div className="space-y-8 animate-in fade-in duration-200">
-            {/* Clean header section */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-200">
+            {/* Clean header section with interactive Month Navigation for guests */}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-3 border-b border-slate-200">
               <div>
-                <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-amber-700">
-                  <Calendar className="w-3.5 h-3.5" />
-                  <span>Planning de {MONTH_NAMES[activeMonth]} {activeYear}</span>
-                </div>
-                <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight mt-1">
+                <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
                   Sorties & Activités
                 </h1>
-                <p className="text-xs sm:text-sm text-slate-500 mt-1">
+                <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
                   Choisissez une activité pour convenir d'une date et d'un créneau ensemble.
                 </p>
               </div>
 
-              <div className="flex items-center gap-3">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-xs text-slate-600 font-medium shadow-xs">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                  <span>{activities.length} idée{activities.length > 1 ? 's' : ''} disponible{activities.length > 1 ? 's' : ''}</span>
-                </span>
-                {isOrganizerUnlocked && (
-                  <button
-                    onClick={() => {
-                      setCurrentView('organizer');
-                      setOrganizerTab('calendar');
+              {/* Guest Interactive Month Navigator */}
+              <div className="flex flex-wrap items-center gap-2 bg-white p-2 rounded-2xl border border-slate-200 shadow-xs">
+                <button
+                  type="button"
+                  onClick={handlePrevMonth}
+                  disabled={isAtMinMonth}
+                  className="p-1.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                  title={isAtMinMonth ? 'Novembre 2026 est le premier mois disponible' : 'Mois précédent'}
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+
+                <div className="flex items-center gap-1.5">
+                  <select
+                    value={activeMonthKey}
+                    onChange={(e) => {
+                      const found = guestAvailableMonths.find((m) => m.key === e.target.value);
+                      if (found) {
+                        handleSetActiveMonth(found.year, found.month);
+                      }
                     }}
-                    className="text-xs font-semibold text-amber-700 hover:text-amber-800 underline underline-offset-4 cursor-pointer"
+                    className="bg-amber-50/80 border border-amber-200 text-amber-900 font-bold text-xs rounded-xl px-3 py-1.5 focus:outline-none cursor-pointer"
                   >
-                    Changer de mois
+                    {guestAvailableMonths.map((m) => (
+                      <option key={m.key} value={m.key}>
+                        {m.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleNextMonth}
+                  className="p-1.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors cursor-pointer"
+                  title="Mois suivant"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+
+                {!isAtMinMonth && (
+                  <button
+                    type="button"
+                    onClick={() => handleSetActiveMonth(2026, 10)}
+                    className="text-[11px] font-semibold text-amber-800 hover:text-amber-950 px-2 py-1 bg-amber-100/60 rounded-lg transition-colors cursor-pointer"
+                    title="Revenir à Novembre 2026"
+                  >
+                    Novembre 2026
                   </button>
                 )}
+
+                <span className="text-slate-300 mx-1 hidden sm:inline">|</span>
+
+                <span className="text-xs text-slate-600 font-semibold px-1">
+                  {monthActivities.length} idée{monthActivities.length > 1 ? 's' : ''}
+                </span>
               </div>
             </div>
 
-            {/* Filter & Search Bar (only if activities exist) */}
-            {activities.length > 0 && (
+            {/* Filter & Search Bar (only if activities exist for this month) */}
+            {monthActivities.length > 0 && (
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
                 <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
                   {categoriesList.map((cat) => (
@@ -862,28 +1000,35 @@ export default function App() {
             )}
 
             {/* Activities Grid or Empty State */}
-            {activities.length === 0 ? (
-              <div className="bg-white rounded-3xl border border-slate-200 p-12 text-center max-w-lg mx-auto shadow-xs space-y-4">
+            {monthActivities.length === 0 ? (
+              <div className="bg-white rounded-3xl border border-dashed border-slate-300 p-12 text-center max-w-lg mx-auto shadow-xs space-y-4">
                 <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
                   <Calendar className="w-7 h-7" />
                 </div>
                 <h3 className="text-lg font-bold text-slate-900">
-                  La liste est en cours de préparation !
+                  Aucune activité proposée pour {MONTH_NAMES[activeMonth]} {activeYear}
                 </h3>
                 <p className="text-xs text-slate-600 leading-relaxed max-w-sm mx-auto">
-                  Les activités sont en train d'être préparées.
-                  Revenez très bientôt ou basculez sur l'Espace Organisateur pour ajouter les premières propositions.
+                  L'organisateur n'a pas encore ajouté d'activités pour ce mois. Vous pouvez changer de mois ci-dessus pour découvrir les activités proposées sur les autres périodes !
                 </p>
-                <div className="pt-2">
+                <div className="pt-2 flex flex-wrap items-center justify-center gap-2">
                   <button
-                    onClick={() => {
-                      setCurrentView('organizer');
-                      setOrganizerTab('activities');
-                    }}
-                    className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+                    onClick={() => handleSetActiveMonth(2026, 10)}
+                    className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-semibold rounded-xl transition-colors cursor-pointer"
                   >
-                    Ajouter mes premières activités
+                    Voir les activités de Novembre 2026
                   </button>
+                  {isOrganizerUnlocked && (
+                    <button
+                      onClick={() => {
+                        setCurrentView('organizer');
+                        setOrganizerTab('activities');
+                      }}
+                      className="px-4 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+                    >
+                      Ajouter des activités à ce mois
+                    </button>
+                  )}
                 </div>
               </div>
             ) : filteredActivities.length === 0 ? (
@@ -1102,6 +1247,11 @@ export default function App() {
                   onUpdateActivity={handleUpdateActivity}
                   onDeleteActivity={handleDeleteActivity}
                   onResetDefaults={() => setActivities([])}
+                  activeYear={activeYear}
+                  activeMonth={activeMonth}
+                  monthNames={MONTH_NAMES}
+                  onChangeActiveMonth={handleSetActiveMonth}
+                  onImportActivities={handleImportActivities}
                 />
               </div>
             )}
@@ -1182,16 +1332,24 @@ export default function App() {
                   onChange={(e) => handleSetActiveMonth(activeYear, parseInt(e.target.value, 10))}
                   className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none cursor-pointer"
                 >
-                  {MONTH_NAMES.map((name, idx) => (
-                    <option key={name} value={idx}>{name}</option>
-                  ))}
+                  {MONTH_NAMES.map((name, idx) => {
+                    const isDisabled = activeYear === 2026 && idx < 10;
+                    return (
+                      <option key={name} value={idx} disabled={isDisabled}>
+                        {name}
+                      </option>
+                    );
+                  })}
                 </select>
                 <select
                   value={activeYear}
-                  onChange={(e) => handleSetActiveMonth(parseInt(e.target.value, 10), activeMonth)}
+                  onChange={(e) => {
+                    const yr = parseInt(e.target.value, 10);
+                    handleSetActiveMonth(yr, activeMonth);
+                  }}
                   className="bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none cursor-pointer font-mono"
                 >
-                  {[activeYear - 1, activeYear, activeYear + 1, activeYear + 2].map((yr) => (
+                  {[2026, 2027, 2028].map((yr) => (
                     <option key={yr} value={yr}>{yr}</option>
                   ))}
                 </select>

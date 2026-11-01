@@ -57,8 +57,8 @@ const readStore = async (): Promise<AppStore> => {
   const defaultData: AppStore = {
     organizerPin: '1126',
     settings: {
-      targetYear: new Date().getFullYear(),
-      targetMonth: new Date().getMonth(),
+      targetYear: 2026,
+      targetMonth: 10, // Novembre 2026 (starting month)
     },
     activities: [],
     proposals: [],
@@ -69,9 +69,20 @@ const readStore = async (): Promise<AppStore> => {
   try {
     const raw = await fs.promises.readFile(DATA_FILE, 'utf-8');
     const parsed = JSON.parse(raw);
+    const settings = parsed.settings || defaultData.settings;
+    if (
+      typeof settings.targetYear !== 'number' ||
+      typeof settings.targetMonth !== 'number' ||
+      settings.targetYear < 2026 ||
+      (settings.targetYear === 2026 && settings.targetMonth < 10)
+    ) {
+      settings.targetYear = 2026;
+      settings.targetMonth = 10;
+    }
+
     return {
       organizerPin: parsed.organizerPin || '1126',
-      settings: parsed.settings || defaultData.settings,
+      settings,
       activities: parsed.activities || [],
       proposals: parsed.proposals || [],
       scheduleSlots: parsed.scheduleSlots || [],
@@ -188,13 +199,68 @@ app.post('/api/activities', async (req, res) => {
   try {
     const store = await readStore();
     const newActivity = {
+      monthKey: req.body.monthKey || '2026-11',
       ...req.body,
-      id: `act-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      id: req.body.id || `act-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       createdAt: new Date().toISOString(),
     };
     store.activities.unshift(newActivity);
     await writeStore(store);
     res.json({ success: true, activity: newActivity });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST import activities from JSON (organizer)
+app.post('/api/activities/import', async (req, res) => {
+  try {
+    const { monthKey, activities: incomingActivities, mode = 'merge' } = req.body;
+    if (!Array.isArray(incomingActivities)) {
+      return res.status(400).json({
+        success: false,
+        error: "Format JSON invalide : un tableau 'activities' est requis.",
+      });
+    }
+
+    const cleanMonthKey = monthKey || '2026-11';
+    const store = await readStore();
+
+    const formattedActivities = incomingActivities.map((item: any, idx: number) => ({
+      ...item,
+      id: item.id || `act-imp-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
+      title: String(item.title || 'Activité sans titre').trim(),
+      description: String(item.description || '').trim(),
+      category: item.category || 'Gastronomie',
+      duration: item.duration || '2h',
+      locationType: item.locationType || 'En ville',
+      energyLevel: item.energyLevel || 'Modéré',
+      accentGradient: item.accentGradient || 'from-amber-600 via-orange-500 to-amber-700',
+      iconName: item.iconName || item.category || 'Calendar',
+      monthKey: item.monthKey || cleanMonthKey,
+      isOrganizerCustom: true,
+      createdAt: item.createdAt || new Date().toISOString(),
+    }));
+
+    if (mode === 'replace') {
+      store.activities = store.activities.filter(
+        (a) => (a.monthKey || '2026-11') !== cleanMonthKey
+      );
+    }
+
+    store.activities = [...formattedActivities, ...store.activities];
+
+    store.notifications.unshift({
+      id: `notif-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      type: 'system',
+      title: 'Import JSON réussi',
+      message: `${formattedActivities.length} activité(s) importée(s) pour le mois ${cleanMonthKey}.`,
+      createdAt: new Date().toISOString(),
+      read: false,
+    });
+
+    await writeStore(store);
+    res.json({ success: true, activities: store.activities, count: formattedActivities.length });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
   }

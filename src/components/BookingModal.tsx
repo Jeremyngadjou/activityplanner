@@ -36,8 +36,8 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   defaultYear,
   defaultMonth,
 }) => {
-  const [pickerYear, setPickerYear] = useState<number>(() => defaultYear ?? new Date().getFullYear());
-  const [pickerMonth, setPickerMonth] = useState<number>(() => defaultMonth ?? new Date().getMonth());
+  const [pickerYear, setPickerYear] = useState<number>(() => defaultYear ?? 2026);
+  const [pickerMonth, setPickerMonth] = useState<number>(() => defaultMonth ?? 10);
   const [selectedDay, setSelectedDay] = useState<number>(() => {
     const today = new Date().getDate();
     return today <= 28 ? today : 1;
@@ -53,11 +53,15 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   const daysInMonth = new Date(pickerYear, pickerMonth + 1, 0).getDate();
   const startOffset = (new Date(pickerYear, pickerMonth, 1).getDay() + 6) % 7;
 
+  // Minimum date boundary: November 2026 (starting month)
+  const isAtMinMonth = pickerYear <= 2026 && pickerMonth <= 10;
+
   // Ensure selectedDay doesn't exceed days in newly selected month
   const safeDay = Math.min(selectedDay, daysInMonth);
   const dateString = `${pickerYear}-${String(pickerMonth + 1).padStart(2, '0')}-${String(safeDay).padStart(2, '0')}`;
 
   const goToPrevMonth = () => {
+    if (isAtMinMonth) return;
     if (pickerMonth === 0) {
       setPickerMonth(11);
       setPickerYear((y) => y - 1);
@@ -209,8 +213,9 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 <button
                   type="button"
                   onClick={goToPrevMonth}
-                  className="p-1 rounded-lg text-slate-600 hover:bg-white hover:text-slate-900 transition-colors cursor-pointer"
-                  title="Mois précédent"
+                  disabled={isAtMinMonth}
+                  className="p-1 rounded-lg text-slate-600 hover:bg-white hover:text-slate-900 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                  title={isAtMinMonth ? 'Novembre 2026 est le mois de démarrage' : 'Mois précédent'}
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
@@ -221,18 +226,27 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                     onChange={(e) => setPickerMonth(parseInt(e.target.value, 10))}
                     className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-900 focus:outline-none cursor-pointer"
                   >
-                    {MONTH_NAMES.map((name, idx) => (
-                      <option key={name} value={idx}>
-                        {name}
-                      </option>
-                    ))}
+                    {MONTH_NAMES.map((name, idx) => {
+                      const isDisabled = pickerYear === 2026 && idx < 10;
+                      return (
+                        <option key={name} value={idx} disabled={isDisabled}>
+                          {name}
+                        </option>
+                      );
+                    })}
                   </select>
                   <select
                     value={pickerYear}
-                    onChange={(e) => setPickerYear(parseInt(e.target.value, 10))}
+                    onChange={(e) => {
+                      const yr = parseInt(e.target.value, 10);
+                      setPickerYear(yr);
+                      if (yr === 2026 && pickerMonth < 10) {
+                        setPickerMonth(10);
+                      }
+                    }}
                     className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-900 focus:outline-none cursor-pointer font-mono"
                   >
-                    {[pickerYear - 1, pickerYear, pickerYear + 1, pickerYear + 2].map((yr) => (
+                    {[2026, 2027, 2028].map((yr) => (
                       <option key={yr} value={yr}>
                         {yr}
                       </option>

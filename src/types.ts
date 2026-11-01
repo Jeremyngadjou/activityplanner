@@ -27,6 +27,7 @@ export interface Activity {
   isOrganizerCustom?: boolean;
   bestSlots?: SlotType[];
   suggestedParticipants?: string;
+  monthKey?: string; // e.g. '2026-11' (defaults to '2026-11' if unspecified)
 }
 
 export interface Proposal {

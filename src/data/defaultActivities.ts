@@ -13,6 +13,7 @@ export const INITIAL_ACTIVITIES: Activity[] = [
     iconName: 'Utensils',
     bestSlots: ['evening'],
     suggestedParticipants: '2 à 6 personnes',
+    monthKey: '2026-11',
   },
   {
     id: 'act-escalade',
@@ -26,6 +27,7 @@ export const INITIAL_ACTIVITIES: Activity[] = [
     iconName: 'Flame',
     bestSlots: ['afternoon', 'evening'],
     suggestedParticipants: '1 à 4 personnes',
+    monthKey: '2026-11',
   },
   {
     id: 'act-expo',
@@ -39,6 +41,7 @@ export const INITIAL_ACTIVITIES: Activity[] = [
     iconName: 'Compass',
     bestSlots: ['morning', 'afternoon'],
     suggestedParticipants: '1 à 3 personnes',
+    monthKey: '2026-11',
   },
   {
     id: 'act-ramen',
@@ -52,6 +55,7 @@ export const INITIAL_ACTIVITIES: Activity[] = [
     iconName: 'Soup',
     bestSlots: ['afternoon', 'evening'],
     suggestedParticipants: '2 à 4 personnes',
+    monthKey: '2026-11',
   },
   {
     id: 'act-escape',
@@ -65,6 +69,7 @@ export const INITIAL_ACTIVITIES: Activity[] = [
     iconName: 'KeyRound',
     bestSlots: ['afternoon', 'evening'],
     suggestedParticipants: '3 à 6 personnes',
+    monthKey: '2026-11',
   },
   {
     id: 'act-rando',
@@ -78,6 +83,7 @@ export const INITIAL_ACTIVITIES: Activity[] = [
     iconName: 'Trees',
     bestSlots: ['morning', 'afternoon'],
     suggestedParticipants: '1 à 5 personnes',
+    monthKey: '2026-11',
   },
   {
     id: 'act-poterie',
@@ -91,6 +97,7 @@ export const INITIAL_ACTIVITIES: Activity[] = [
     iconName: 'Palette',
     bestSlots: ['morning', 'afternoon'],
     suggestedParticipants: '1 à 3 personnes',
+    monthKey: '2026-11',
   },
   {
     id: 'act-cocktails',
@@ -104,5 +111,6 @@ export const INITIAL_ACTIVITIES: Activity[] = [
     iconName: 'Wine',
     bestSlots: ['evening'],
     suggestedParticipants: '2 à 4 personnes',
+    monthKey: '2026-11',
   },
 ];
