@@ -2,12 +2,14 @@ import React, { useState } from 'react';
 import { Activity, Category, EnergyLevel } from '../types';
 import { Plus, Edit3, Trash2, Sparkles, RotateCcw, Check, Download, Upload, FileText, Calendar } from 'lucide-react';
 import { ActivityJsonModal } from './ActivityJsonModal';
+import { DeleteAllActivitiesModal } from './DeleteAllActivitiesModal';
 
 interface OrganizerActivityManagerProps {
   activities: Activity[];
   onAddActivity: (activity: Omit<Activity, 'id'>) => void;
   onUpdateActivity: (activity: Activity) => void;
   onDeleteActivity: (activityId: string) => void;
+  onDeleteAllActivities?: (scope: 'current' | 'all') => Promise<void>;
   onResetDefaults: () => void;
   activeYear: number;
   activeMonth: number;
@@ -50,9 +52,11 @@ export const OrganizerActivityManager: React.FC<OrganizerActivityManagerProps> =
   monthNames,
   onChangeActiveMonth,
   onImportActivities,
+  onDeleteAllActivities,
 }) => {
   const [modalOpen, setModalOpen] = useState(false);
   const [jsonModalOpen, setJsonModalOpen] = useState(false);
+  const [deleteAllModalOpen, setDeleteAllModalOpen] = useState(false);
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
 
   // Month filter in manager: 'current' (active month) or 'all'
@@ -210,6 +214,19 @@ export const OrganizerActivityManager: React.FC<OrganizerActivityManagerProps> =
             <FileText className="w-3.5 h-3.5 text-amber-700" />
             <span>JSON (Import / Export)</span>
           </button>
+
+          {/* Delete All Activities Trigger */}
+          {onDeleteAllActivities && (
+            <button
+              type="button"
+              onClick={() => setDeleteAllModalOpen(true)}
+              className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold rounded-xl border border-rose-200 flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
+              title="Supprimer toutes les activités d'un coup"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+              <span>Tout supprimer</span>
+            </button>
+          )}
 
           <button
             type="button"
@@ -555,6 +572,18 @@ export const OrganizerActivityManager: React.FC<OrganizerActivityManagerProps> =
         monthNames={monthNames}
         onImportActivities={onImportActivities}
       />
+
+      {/* Delete All Activities Modal */}
+      {onDeleteAllActivities && (
+        <DeleteAllActivitiesModal
+          isOpen={deleteAllModalOpen}
+          onClose={() => setDeleteAllModalOpen(false)}
+          onConfirm={onDeleteAllActivities}
+          currentMonthLabel={currentMonthLabel}
+          currentMonthCount={monthCount}
+          totalCount={activities.length}
+        />
+      )}
     </div>
   );
 };

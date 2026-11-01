@@ -296,6 +296,25 @@ app.delete('/api/activities/:id', async (req, res) => {
   }
 });
 
+// DELETE activities in bulk (current month or all)
+app.post('/api/activities/delete-bulk', async (req, res) => {
+  try {
+    const { scope, monthKey } = req.body;
+    const store = await readStore();
+    const initialCount = store.activities.length;
+    if (scope === 'current' && monthKey) {
+      store.activities = store.activities.filter((a) => (a.monthKey || '2026-11') !== monthKey);
+    } else {
+      store.activities = [];
+    }
+    const deletedCount = initialCount - store.activities.length;
+    await writeStore(store);
+    res.json({ success: true, deletedCount, remainingCount: store.activities.length });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // POST submit a proposal (friend / participant)
 app.post('/api/proposals', async (req, res) => {
   try {

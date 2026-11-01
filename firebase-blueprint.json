@@ -1,0 +1,108 @@
+{
+  "entities": {
+    "Activity": {
+      "title": "Activity",
+      "description": "An activity proposed by the organizer for friends to choose from",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "category": { "type": "string", "maxLength": 50 },
+        "duration": { "type": "string", "maxLength": 50 },
+        "locationType": { "type": "string", "maxLength": 80 },
+        "energyLevel": { "type": "string", "maxLength": 30 },
+        "accentGradient": { "type": "string", "maxLength": 150 },
+        "iconName": { "type": "string", "maxLength": 50 },
+        "isOrganizerCustom": { "type": "boolean" },
+        "monthKey": { "type": "string", "maxLength": 20 },
+        "imageUrl": { "type": "string", "maxLength": 500 },
+        "suggestedParticipants": { "type": "string", "maxLength": 100 },
+        "bestSlots": { "type": "array" }
+      },
+      "required": ["title", "description", "category", "duration", "locationType", "energyLevel", "accentGradient", "iconName"]
+    },
+    "Proposal": {
+      "title": "Proposal",
+      "description": "A booking proposal submitted by a friend for an activity",
+      "type": "object",
+      "properties": {
+        "activityId": { "type": "string", "maxLength": 128 },
+        "activityTitle": { "type": "string", "maxLength": 120 },
+        "friendName": { "type": "string", "maxLength": 100 },
+        "friendContact": { "type": "string", "maxLength": 150 },
+        "note": { "type": "string", "maxLength": 1000 },
+        "date": { "type": "string", "maxLength": 20 },
+        "slot": { "type": "string", "maxLength": 30 },
+        "status": { "type": "string", "enum": ["pending", "accepted", "declined"] },
+        "createdAt": { "type": "string", "maxLength": 50 },
+        "declineReason": { "type": "string", "maxLength": 500 }
+      },
+      "required": ["activityId", "activityTitle", "friendName", "date", "slot", "status", "createdAt"]
+    },
+    "ScheduleSlot": {
+      "title": "ScheduleSlot",
+      "description": "A confirmed calendar slot booked between organizer and friend",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string", "maxLength": 20 },
+        "slot": { "type": "string", "maxLength": 30 },
+        "proposalId": { "type": "string", "maxLength": 128 },
+        "activityId": { "type": "string", "maxLength": 128 },
+        "activityTitle": { "type": "string", "maxLength": 120 },
+        "friendName": { "type": "string", "maxLength": 100 },
+        "note": { "type": "string", "maxLength": 1000 }
+      },
+      "required": ["date", "slot", "proposalId", "activityId", "activityTitle", "friendName"]
+    },
+    "AppNotification": {
+      "title": "AppNotification",
+      "description": "An organizer notification triggered by new proposals or system events",
+      "type": "object",
+      "properties": {
+        "type": { "type": "string", "maxLength": 50 },
+        "title": { "type": "string", "maxLength": 150 },
+        "message": { "type": "string", "maxLength": 500 },
+        "proposalId": { "type": "string", "maxLength": 128 },
+        "friendName": { "type": "string", "maxLength": 100 },
+        "activityTitle": { "type": "string", "maxLength": 120 },
+        "date": { "type": "string", "maxLength": 20 },
+        "slot": { "type": "string", "maxLength": 30 },
+        "createdAt": { "type": "string", "maxLength": 50 },
+        "read": { "type": "boolean" }
+      },
+      "required": ["type", "title", "message", "createdAt", "read"]
+    },
+    "AppSettings": {
+      "title": "AppSettings",
+      "description": "Global application planning settings",
+      "type": "object",
+      "properties": {
+        "targetYear": { "type": "number" },
+        "targetMonth": { "type": "number" }
+      },
+      "required": ["targetYear", "targetMonth"]
+    }
+  },
+  "firestore": {
+    "/activities/{activityId}": {
+      "schema": "Activity",
+      "description": "List of activities available to browse and book"
+    },
+    "/proposals/{proposalId}": {
+      "schema": "Proposal",
+      "description": "Proposals submitted by friends or handled by the organizer"
+    },
+    "/scheduleSlots/{slotId}": {
+      "schema": "ScheduleSlot",
+      "description": "Confirmed date slots"
+    },
+    "/notifications/{notificationId}": {
+      "schema": "AppNotification",
+      "description": "Organizer notification messages"
+    },
+    "/settings/{settingId}": {
+      "schema": "AppSettings",
+      "description": "Application settings including target active month"
+    }
+  }
+}

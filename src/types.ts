@@ -45,6 +45,7 @@ export interface Proposal {
 }
 
 export interface ScheduleSlot {
+  id?: string;
   date: string; // YYYY-MM-DD
   slot: SlotType;
   proposalId: string;

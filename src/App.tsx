@@ -33,6 +33,23 @@ import {
 import { PinModal, ChangePinModal } from './components/PinModal';
 import { initAuth, logoutGoogle } from './services/calendarService';
 import { User as FirebaseUser } from 'firebase/auth';
+import { ADMIN_EMAIL } from './firebase';
+import {
+  subscribeActivities,
+  subscribeProposals,
+  subscribeScheduleSlots,
+  subscribeNotifications,
+  subscribeSettings,
+  saveActivityToFirestore,
+  deleteActivityFromFirestore,
+  deleteAllActivitiesFromFirestore,
+  importActivitiesToFirestore,
+  createProposalInFirestore,
+  updateProposalStatusInFirestore,
+  saveScheduleSlotToFirestore,
+  deleteScheduleSlotFromFirestore,
+  saveSettingsToFirestore,
+} from './services/firestoreSync';
 
 const MONTH_NAMES = [
   'Janvier',
@@ -133,6 +150,10 @@ export default function App() {
     window.history.replaceState({}, '', url.toString());
 
     try {
+      await saveSettingsToFirestore(safeYear, safeMonth);
+    } catch {}
+
+    try {
       await fetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -174,27 +195,26 @@ export default function App() {
     }
   }
 
-  // Handle JSON Import
+  // Handle JSON Import with Firestore broadcast
   const handleImportActivities = async (
     monthKey: string,
     importedList: Activity[],
     mode: 'merge' | 'replace'
   ) => {
+    const cleanMonthKey = monthKey || '2026-11';
     try {
-      const res = await fetch('/api/activities/import', {
+      await importActivitiesToFirestore(cleanMonthKey, importedList, mode);
+    } catch (e) {
+      console.warn('Erreur import Firestore:', e);
+    }
+
+    try {
+      await fetch('/api/activities/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ monthKey, activities: importedList, mode }),
+        body: JSON.stringify({ monthKey: cleanMonthKey, activities: importedList, mode }),
       });
-      const data = await res.json();
-      if (res.ok && data.success && Array.isArray(data.activities)) {
-        setActivities(data.activities);
-        loadServerData(false);
-      } else {
-        throw new Error(data.error || "Échec de l'import");
-      }
     } catch {
-      const cleanMonthKey = monthKey || '2026-11';
       const formatted = importedList.map((item, idx) => ({
         ...item,
         id: item.id || `act-imp-${Date.now()}-${idx}`,
@@ -399,13 +419,89 @@ export default function App() {
     }
   };
 
-  // Centralized polling every 6 seconds to keep notifications and proposals in sync across devices
+  // Real-time Firestore synchronization across all devices & friends
   useEffect(() => {
-    const interval = setInterval(() => {
+    // Initial fetch for immediate load
+    loadServerData(false);
+
+    // 1. Subscribe to Activities in real-time
+    const unsubActivities = subscribeActivities((liveActivities) => {
+      if (liveActivities && liveActivities.length > 0) {
+        setActivities(liveActivities);
+      }
+      setIsLoading(false);
+    });
+
+    // 2. Subscribe to Proposals in real-time
+    const unsubProposals = subscribeProposals((liveProposals) => {
+      setProposals(liveProposals);
+    });
+
+    // 3. Subscribe to Schedule Slots in real-time
+    const unsubSlots = subscribeScheduleSlots((liveSlots) => {
+      setScheduleSlots(liveSlots);
+    });
+
+    // 4. Subscribe to global Settings in real-time
+    const unsubSettings = subscribeSettings((liveSettings) => {
+      const params = new URLSearchParams(window.location.search);
+      if (!params.get('m')) {
+        if (typeof liveSettings.targetYear === 'number') {
+          setActiveYear(liveSettings.targetYear);
+        }
+        if (typeof liveSettings.targetMonth === 'number') {
+          setActiveMonth(liveSettings.targetMonth);
+        }
+      }
+    });
+
+    // 5. Auth State Listener
+    const unsubAuth = initAuth(
+      (user, token) => {
+        setGoogleUser(user);
+        setGoogleToken(token);
+        if (user.email && user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+          setIsOrganizerUnlocked(true);
+          localStorage.setItem(STORAGE_KEY_AUTH, 'true');
+        }
+      },
+      () => {
+        setGoogleUser(null);
+        setGoogleToken(null);
+      }
+    );
+
+    // Light polling fallback to catch server changes
+    const pollInterval = setInterval(() => {
       loadServerData(false);
-    }, 6000);
-    return () => clearInterval(interval);
+    }, 10000);
+
+    return () => {
+      unsubActivities?.();
+      unsubProposals?.();
+      unsubSlots?.();
+      unsubSettings?.();
+      unsubAuth?.();
+      clearInterval(pollInterval);
+    };
   }, []);
+
+  // Notifications live listener for admin
+  useEffect(() => {
+    if (googleUser?.email && googleUser.email.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+      const unsubNotifs = subscribeNotifications((liveNotifs) => {
+        setNotifications((prev) => {
+          const prevIds = new Set(prev.map((n) => n.id));
+          const fresh = liveNotifs.filter((n) => !n.read && !prevIds.has(n.id));
+          if (fresh.length > 0) {
+            setLatestToast(fresh[0]);
+          }
+          return liveNotifs;
+        });
+      });
+      return () => unsubNotifs?.();
+    }
+  }, [googleUser]);
 
   // Sync to localStorage as backup
   useEffect(() => {
@@ -422,32 +518,22 @@ export default function App() {
     localStorage.setItem('rdv_nov_slots', JSON.stringify(scheduleSlots));
   }, [scheduleSlots]);
 
-  useEffect(() => {
-    loadServerData();
-    const unsubscribe = initAuth(
-      (user, token) => {
-        setGoogleUser(user);
-        setGoogleToken(token);
-      },
-      () => {
-        setGoogleUser(null);
-        setGoogleToken(null);
-      }
-    );
-    return () => {
-      unsubscribe?.();
-    };
-  }, []);
-
   const handleGoogleLoginSuccess = (user: FirebaseUser, token: string) => {
     setGoogleUser(user);
     setGoogleToken(token);
+    if (user.email && user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+      setIsOrganizerUnlocked(true);
+      localStorage.setItem(STORAGE_KEY_AUTH, 'true');
+    }
   };
 
   const handleGoogleLogout = async () => {
     await logoutGoogle();
     setGoogleUser(null);
     setGoogleToken(null);
+    setIsOrganizerUnlocked(false);
+    localStorage.removeItem(STORAGE_KEY_AUTH);
+    setCurrentView('friend');
   };
 
   const [showShareModal, setShowShareModal] = useState(false);
@@ -475,120 +561,101 @@ export default function App() {
 
   // Submit a proposal (friend view)
   const handleCreateProposal = async (data: Omit<Proposal, 'id' | 'status' | 'createdAt'>) => {
+    const newProp: Proposal = {
+      ...data,
+      id: `prop-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+    };
+
+    // 1. Direct Firestore write (propagates immediately to admin)
     try {
-      const res = await fetch('/api/proposals', {
+      await createProposalInFirestore(newProp);
+    } catch (e) {
+      console.warn('Erreur création proposition Firestore:', e);
+    }
+
+    // 2. Server persistence fallback
+    try {
+      await fetch('/api/proposals', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify(newProp),
       });
-      if (res.ok) {
-        const resData = await res.json();
-        if (resData.success && resData.proposal) {
-          setProposals((prev) => [resData.proposal, ...prev]);
-          if (resData.notification) {
-            setNotifications((prev) => [resData.notification, ...prev]);
-          }
-          return;
-        }
-      }
-      throw new Error('API offline');
-    } catch {
-      // Fallback local creation
-      const localProp: Proposal = {
-        ...data,
-        id: `prop-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-      };
-      setProposals((prev) => [localProp, ...prev]);
-      const localNotif: AppNotification = {
-        id: `notif-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-        type: 'proposal_received',
-        title: 'Nouvelle proposition',
-        message: `${localProp.friendName || 'Un ami'} a proposé : ${localProp.activityTitle}`,
-        proposalId: localProp.id,
-        friendName: localProp.friendName,
-        activityTitle: localProp.activityTitle,
-        date: localProp.date,
-        slot: localProp.slot,
-        createdAt: new Date().toISOString(),
-        read: false,
-      };
-      setNotifications((prev) => [localNotif, ...prev]);
-    }
+    } catch {}
+
+    setProposals((prev) => [newProp, ...prev]);
   };
 
   // Accept a proposal (organizer)
   const handleAcceptProposal = async (proposalId: string) => {
+    const prop = proposals.find((p) => p.id === proposalId);
     try {
-      const res = await fetch(`/api/proposals/${proposalId}/accept`, {
-        method: 'POST',
-      });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          setProposals((prev) =>
-            prev.map((p) => (p.id === proposalId ? { ...p, status: 'accepted' as const } : p))
-          );
-          if (data.scheduleSlots) {
-            setScheduleSlots(data.scheduleSlots);
-          }
-          return;
-        }
-      }
-      throw new Error('API offline');
-    } catch {
-      // Fallback local accept
-      const prop = proposals.find((p) => p.id === proposalId);
+      await updateProposalStatusInFirestore(proposalId, 'accepted');
       if (prop) {
-        setProposals((prev) =>
-          prev.map((p) => (p.id === proposalId ? { ...p, status: 'accepted' as const } : p))
-        );
-        setScheduleSlots((prev) => [
-          ...prev.filter((s) => !(s.date === prop.date && s.slot === prop.slot)),
-          {
-            date: prop.date,
-            slot: prop.slot,
-            proposalId: prop.id,
-            activityId: prop.activityId,
-            activityTitle: prop.activityTitle,
-            friendName: prop.friendName,
-            note: prop.note,
-          },
-        ]);
+        await saveScheduleSlotToFirestore({
+          date: prop.date,
+          slot: prop.slot,
+          proposalId: prop.id,
+          activityId: prop.activityId,
+          activityTitle: prop.activityTitle,
+          friendName: prop.friendName,
+          note: prop.note,
+        });
       }
+    } catch (e) {
+      console.warn('Erreur acceptation proposition Firestore:', e);
+    }
+
+    try {
+      await fetch(`/api/proposals/${proposalId}/accept`, { method: 'POST' });
+    } catch {}
+
+    setProposals((prev) =>
+      prev.map((p) => (p.id === proposalId ? { ...p, status: 'accepted' as const } : p))
+    );
+    if (prop) {
+      setScheduleSlots((prev) => [
+        ...prev.filter((s) => !(s.date === prop.date && s.slot === prop.slot)),
+        {
+          date: prop.date,
+          slot: prop.slot,
+          proposalId: prop.id,
+          activityId: prop.activityId,
+          activityTitle: prop.activityTitle,
+          friendName: prop.friendName,
+          note: prop.note,
+        },
+      ]);
     }
   };
 
   // Decline a proposal (organizer)
   const handleDeclineProposal = async (proposalId: string, reason?: string) => {
+    const prop = proposals.find((p) => p.id === proposalId);
     try {
-      const res = await fetch(`/api/proposals/${proposalId}/decline`, {
+      await updateProposalStatusInFirestore(proposalId, 'declined', reason);
+      if (prop) {
+        await deleteScheduleSlotFromFirestore(prop.date, prop.slot);
+      }
+    } catch (e) {
+      console.warn('Erreur refus proposition Firestore:', e);
+    }
+
+    try {
+      await fetch(`/api/proposals/${proposalId}/decline`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          setProposals((prev) =>
-            prev.map((p) =>
-              p.id === proposalId ? { ...p, status: 'declined' as const, declineReason: reason } : p
-            )
-          );
-          if (data.scheduleSlots) {
-            setScheduleSlots(data.scheduleSlots);
-          }
-          return;
-        }
-      }
-      throw new Error('API offline');
-    } catch {
-      setProposals((prev) =>
-        prev.map((p) =>
-          p.id === proposalId ? { ...p, status: 'declined' as const, declineReason: reason } : p
-        )
-      );
+    } catch {}
+
+    setProposals((prev) =>
+      prev.map((p) =>
+        p.id === proposalId ? { ...p, status: 'declined' as const, declineReason: reason } : p
+      )
+    );
+    if (prop) {
       setScheduleSlots((prev) => prev.filter((s) => s.proposalId !== proposalId));
     }
   };
@@ -596,82 +663,101 @@ export default function App() {
   // Remove a schedule slot (organizer)
   const handleRemoveSlot = async (date: string, slot: string) => {
     try {
-      const res = await fetch(`/api/slots?date=${encodeURIComponent(date)}&slot=${encodeURIComponent(slot)}`, {
+      await deleteScheduleSlotFromFirestore(date, slot);
+    } catch (e) {
+      console.warn('Erreur suppression créneau Firestore:', e);
+    }
+
+    try {
+      await fetch(`/api/slots?date=${encodeURIComponent(date)}&slot=${encodeURIComponent(slot)}`, {
         method: 'DELETE',
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.scheduleSlots) {
-          setScheduleSlots(data.scheduleSlots);
-          return;
-        }
-      }
-      throw new Error('API offline');
-    } catch {
-      setScheduleSlots((prev) => prev.filter((s) => !(s.date === date && s.slot === slot)));
-    }
+    } catch {}
+
+    setScheduleSlots((prev) => prev.filter((s) => !(s.date === date && s.slot === slot)));
   };
 
-  // Add activity (organizer)
+  // Add activity (organizer - live Firestore broadcast)
   const handleAddActivity = async (newAct: Omit<Activity, 'id'>) => {
+    const fullAct: Activity = {
+      ...newAct,
+      id: `act-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      monthKey: newAct.monthKey || activeMonthKey,
+    };
+
     try {
-      const res = await fetch('/api/activities', {
+      await saveActivityToFirestore(fullAct);
+    } catch (e) {
+      console.warn('Erreur ajout activité Firestore:', e);
+    }
+
+    try {
+      await fetch('/api/activities', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newAct),
+        body: JSON.stringify(fullAct),
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.activity) {
-          setActivities((prev) => [data.activity, ...prev]);
-          return;
-        }
-      }
-      throw new Error('API offline');
-    } catch {
-      const localAct: Activity = {
-        ...newAct,
-        id: `act-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      };
-      setActivities((prev) => [localAct, ...prev]);
-    }
+    } catch {}
+
+    setActivities((prev) => [fullAct, ...prev]);
   };
 
   // Update activity (organizer)
   const handleUpdateActivity = async (updated: Activity) => {
     try {
-      const res = await fetch(`/api/activities/${updated.id}`, {
+      await saveActivityToFirestore(updated);
+    } catch (e) {
+      console.warn('Erreur mise à jour activité Firestore:', e);
+    }
+
+    try {
+      await fetch(`/api/activities/${updated.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updated),
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.activity) {
-          setActivities((prev) => prev.map((a) => (a.id === updated.id ? data.activity : a)));
-          return;
-        }
-      }
-      throw new Error('API offline');
-    } catch {
-      setActivities((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
-    }
+    } catch {}
+
+    setActivities((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
   };
 
   // Delete activity (organizer)
   const handleDeleteActivity = async (id: string) => {
     try {
-      const res = await fetch(`/api/activities/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success) {
-          setActivities((prev) => prev.filter((a) => a.id !== id));
-          return;
-        }
-      }
-      throw new Error('API offline');
-    } catch {
-      setActivities((prev) => prev.filter((a) => a.id !== id));
+      await deleteActivityFromFirestore(id);
+    } catch (e) {
+      console.warn('Erreur suppression activité Firestore:', e);
+    }
+
+    try {
+      await fetch(`/api/activities/${id}`, { method: 'DELETE' });
+    } catch {}
+
+    setActivities((prev) => prev.filter((a) => a.id !== id));
+  };
+
+  // Delete all activities at once (current month or all)
+  const handleDeleteAllActivities = async (scope: 'current' | 'all') => {
+    const targetMonthKey = scope === 'current' ? activeMonthKey : undefined;
+
+    try {
+      await deleteAllActivitiesFromFirestore(targetMonthKey);
+    } catch (e) {
+      console.warn('Erreur suppression groupée Firestore:', e);
+    }
+
+    try {
+      await fetch('/api/activities/delete-bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scope, monthKey: targetMonthKey }),
+      });
+    } catch {}
+
+    if (scope === 'current') {
+      setActivities((prev) => prev.filter((a) => (a.monthKey || '2026-11') !== activeMonthKey));
+    } else {
+      setActivities([]);
     }
   };
 
@@ -824,6 +910,13 @@ export default function App() {
 
             {isOrganizerUnlocked ? (
               <div className="flex items-center gap-1.5">
+                {googleUser && googleUser.email?.toLowerCase() === ADMIN_EMAIL.toLowerCase() && (
+                  <span className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold text-emerald-800 bg-emerald-50 rounded-lg border border-emerald-200">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                    <span>Admin : {ADMIN_EMAIL}</span>
+                  </span>
+                )}
+
                 <OrganizerNotifications
                   notifications={notifications}
                   onMarkAsRead={handleMarkNotifAsRead}
@@ -870,10 +963,10 @@ export default function App() {
                 <button
                   onClick={handleLockOrganizer}
                   className="px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 flex items-center gap-1 transition-colors cursor-pointer"
-                  title="Verrouiller l'espace organisateur"
+                  title="Verrouiller ou se déconnecter"
                 >
                   <Lock className="w-3.5 h-3.5 text-slate-500" />
-                  <span className="hidden sm:inline">Verrouiller</span>
+                  <span className="hidden sm:inline">Déconnexion</span>
                 </button>
               </div>
             ) : (
@@ -1246,6 +1339,7 @@ export default function App() {
                   onAddActivity={handleAddActivity}
                   onUpdateActivity={handleUpdateActivity}
                   onDeleteActivity={handleDeleteActivity}
+                  onDeleteAllActivities={handleDeleteAllActivities}
                   onResetDefaults={() => setActivities([])}
                   activeYear={activeYear}
                   activeMonth={activeMonth}

@@ -1,0 +1,133 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        request.auth.token.email == 'ngadjoujerem@gmail.com' &&
+        request.auth.token.email_verified == true;
+    }
+
+    function isValidActivity(data) {
+      return data.keys().hasAll(['title', 'description', 'category', 'duration', 'locationType', 'energyLevel', 'accentGradient', 'iconName']) &&
+        data.title is string && data.title.size() <= 120 &&
+        data.description is string && data.description.size() <= 1000 &&
+        data.category is string && data.category.size() <= 50 &&
+        data.duration is string && data.duration.size() <= 50 &&
+        data.locationType is string && data.locationType.size() <= 80 &&
+        data.energyLevel is string && data.energyLevel.size() <= 30 &&
+        data.accentGradient is string && data.accentGradient.size() <= 150 &&
+        data.iconName is string && data.iconName.size() <= 50 &&
+        (!('monthKey' in data) || (data.monthKey is string && data.monthKey.size() <= 20)) &&
+        (!('isOrganizerCustom' in data) || data.isOrganizerCustom is bool) &&
+        (!('imageUrl' in data) || (data.imageUrl is string && data.imageUrl.size() <= 500)) &&
+        (!('suggestedParticipants' in data) || (data.suggestedParticipants is string && data.suggestedParticipants.size() <= 100)) &&
+        (!('bestSlots' in data) || data.bestSlots is list);
+    }
+
+    function isValidProposal(data) {
+      return data.keys().hasAll(['activityId', 'activityTitle', 'friendName', 'date', 'slot', 'status', 'createdAt']) &&
+        data.activityId is string && data.activityId.size() <= 128 &&
+        data.activityTitle is string && data.activityTitle.size() <= 120 &&
+        data.friendName is string && data.friendName.size() <= 100 &&
+        data.date is string && data.date.size() <= 20 &&
+        data.slot is string && data.slot.size() <= 30 &&
+        data.status is string && (data.status == 'pending' || data.status == 'accepted' || data.status == 'declined') &&
+        data.createdAt is string && data.createdAt.size() <= 50 &&
+        (!('friendContact' in data) || (data.friendContact is string && data.friendContact.size() <= 150)) &&
+        (!('note' in data) || (data.note is string && data.note.size() <= 1000)) &&
+        (!('declineReason' in data) || (data.declineReason is string && data.declineReason.size() <= 500));
+    }
+
+    function isValidScheduleSlot(data) {
+      return data.keys().hasAll(['date', 'slot', 'proposalId', 'activityId', 'activityTitle', 'friendName']) &&
+        data.date is string && data.date.size() <= 20 &&
+        data.slot is string && data.slot.size() <= 30 &&
+        data.proposalId is string && data.proposalId.size() <= 128 &&
+        data.activityId is string && data.activityId.size() <= 128 &&
+        data.activityTitle is string && data.activityTitle.size() <= 120 &&
+        data.friendName is string && data.friendName.size() <= 100 &&
+        (!('note' in data) || (data.note is string && data.note.size() <= 1000));
+    }
+
+    function isValidNotification(data) {
+      return data.keys().hasAll(['type', 'title', 'message', 'createdAt', 'read']) &&
+        data.type is string && data.type.size() <= 50 &&
+        data.title is string && data.title.size() <= 150 &&
+        data.message is string && data.message.size() <= 500 &&
+        data.createdAt is string && data.createdAt.size() <= 50 &&
+        data.read is bool &&
+        (!('proposalId' in data) || (data.proposalId is string && data.proposalId.size() <= 128)) &&
+        (!('friendName' in data) || (data.friendName is string && data.friendName.size() <= 100)) &&
+        (!('activityTitle' in data) || (data.activityTitle is string && data.activityTitle.size() <= 120)) &&
+        (!('date' in data) || (data.date is string && data.date.size() <= 20)) &&
+        (!('slot' in data) || (data.slot is string && data.slot.size() <= 30));
+    }
+
+    function isValidSettings(data) {
+      return data.keys().hasAll(['targetYear', 'targetMonth']) &&
+        data.targetYear is number &&
+        data.targetMonth is number;
+    }
+
+    // Default safety deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Activities collection
+    match /activities/{activityId} {
+      allow read: if true;
+      allow create: if isAdmin() && isValidId(activityId) && isValidActivity(incoming());
+      allow update: if isAdmin() && isValidId(activityId) && isValidActivity(incoming());
+      allow delete: if isAdmin() && isValidId(activityId);
+    }
+
+    // Proposals collection
+    match /proposals/{proposalId} {
+      allow read: if true;
+      allow create: if isValidId(proposalId) && isValidProposal(incoming());
+      allow update: if isAdmin() && isValidId(proposalId) && isValidProposal(incoming());
+      allow delete: if isAdmin() && isValidId(proposalId);
+    }
+
+    // Schedule Slots collection
+    match /scheduleSlots/{slotId} {
+      allow read: if true;
+      allow create: if isAdmin() && isValidId(slotId) && isValidScheduleSlot(incoming());
+      allow update: if isAdmin() && isValidId(slotId) && isValidScheduleSlot(incoming());
+      allow delete: if isAdmin() && isValidId(slotId);
+    }
+
+    // Notifications collection
+    match /notifications/{notificationId} {
+      allow read: if isAdmin();
+      allow create: if isValidId(notificationId) && isValidNotification(incoming());
+      allow update: if isAdmin() && isValidId(notificationId) && isValidNotification(incoming());
+      allow delete: if isAdmin() && isValidId(notificationId);
+    }
+
+    // Settings collection
+    match /settings/{settingId} {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidId(settingId) && isValidSettings(incoming());
+      allow delete: if isAdmin() && isValidId(settingId);
+    }
+  }
+}

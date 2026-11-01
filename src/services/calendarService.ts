@@ -1,30 +1,22 @@
-import { initializeApp, getApps, getApp } from 'firebase/app';
 import {
-  getAuth,
   signInWithPopup,
   GoogleAuthProvider,
   onAuthStateChanged,
   User,
   signOut,
 } from 'firebase/auth';
-import firebaseConfig from '../../firebase-applet-config.json';
+import { auth, ADMIN_EMAIL } from '../firebase';
 import { SlotType } from '../types';
 
 export const CALENDAR_SCOPES = ['https://www.googleapis.com/auth/calendar.events'];
 
-// Safe Firebase App and Auth initialization
-let app: any = null;
-let auth: any = null;
 let provider: any = null;
-
 try {
-  app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
-  auth = getAuth(app);
   provider = new GoogleAuthProvider();
   CALENDAR_SCOPES.forEach((scope) => provider.addScope(scope));
   provider.setCustomParameters({ prompt: 'select_account' });
 } catch (e) {
-  console.warn('Firebase Auth non initialisé (mode hors-ligne ou configuration restreinte):', e);
+  console.warn('Firebase Auth provider non initialisé:', e);
 }
 
 let cachedAccessToken: string | null = null;
