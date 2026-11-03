@@ -294,6 +294,10 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               )}
             </div>
 
+            <p className="text-[11px] text-amber-800 bg-amber-50 p-2.5 rounded-xl border border-amber-200 text-center max-w-sm mx-auto">
+              Vous pouvez suivre la réponse de l'organisateur en direct à tout moment via le bouton « Mes demandes » en haut de la page.
+            </p>
+
             <button
               onClick={onClose}
               className="w-full py-3 px-6 bg-slate-900 hover:bg-slate-800 text-white font-medium rounded-xl text-sm transition-colors shadow-sm cursor-pointer"

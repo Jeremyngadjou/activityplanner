@@ -85,6 +85,65 @@ export const OrganizerInbox: React.FC<OrganizerInboxProps> = ({
     return dateStr;
   };
 
+  const getContactActions = (
+    contact: string,
+    friendName: string,
+    activityTitle: string,
+    date: string,
+    slot: SlotType,
+    isAccepted: boolean
+  ) => {
+    const clean = contact.trim();
+    const isEmail = clean.includes('@') && clean.includes('.');
+    const digitsOnly = clean.replace(/\D/g, '');
+    const isPhone = digitsOnly.length >= 8;
+
+    const message = isAccepted
+      ? `Salut ${friendName} ! C'est validé pour « ${activityTitle} » le ${formatDate(date)} (${slotLabels[slot]}) !`
+      : `Salut ${friendName} ! Concernant ta proposition pour « ${activityTitle} » le ${formatDate(date)} : `;
+
+    if (isEmail) {
+      return (
+        <a
+          href={`mailto:${clean}?subject=${encodeURIComponent(`Sortie : ${activityTitle}`)}&body=${encodeURIComponent(message)}`}
+          className="text-[11px] text-blue-600 hover:text-blue-800 underline font-medium"
+          title="Envoyer un email de confirmation"
+        >
+          Envoyer un email
+        </a>
+      );
+    }
+
+    if (isPhone) {
+      let waNumber = digitsOnly;
+      if (waNumber.startsWith('0') && waNumber.length === 10) {
+        waNumber = `33${waNumber.substring(1)}`;
+      }
+      return (
+        <div className="inline-flex items-center gap-1.5 ml-1">
+          <a
+            href={`https://wa.me/${waNumber}?text=${encodeURIComponent(message)}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-[11px] font-semibold text-emerald-700 hover:text-emerald-900 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 transition-colors"
+            title="Envoyer confirmation via WhatsApp"
+          >
+            WhatsApp
+          </a>
+          <a
+            href={`sms:${digitsOnly}?body=${encodeURIComponent(message)}`}
+            className="text-[11px] font-medium text-slate-600 hover:text-slate-900 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 transition-colors"
+            title="Envoyer SMS"
+          >
+            SMS
+          </a>
+        </div>
+      );
+    }
+
+    return null;
+  };
+
   return (
     <div className="space-y-6">
       {/* Google Calendar Automatic Sync Banner */}
@@ -294,9 +353,17 @@ export const OrganizerInbox: React.FC<OrganizerInboxProps> = ({
                         <span>{slotLabels[proposal.slot]}</span>
                       </div>
                       {proposal.friendContact && (
-                        <div className="flex items-center gap-1.5 text-slate-500">
+                        <div className="flex flex-wrap items-center gap-1.5 text-slate-500">
                           <Phone className="w-3.5 h-3.5 text-slate-400" />
-                          <span>{proposal.friendContact}</span>
+                          <span className="font-medium text-slate-700">{proposal.friendContact}</span>
+                          {getContactActions(
+                            proposal.friendContact,
+                            proposal.friendName,
+                            proposal.activityTitle,
+                            proposal.date,
+                            proposal.slot,
+                            proposal.status === 'accepted'
+                          )}
                         </div>
                       )}
                     </div>

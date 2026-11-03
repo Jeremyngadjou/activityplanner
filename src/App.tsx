@@ -8,6 +8,7 @@ import { OrganizerCalendar } from './components/OrganizerCalendar';
 import { OrganizerActivityManager } from './components/OrganizerActivityManager';
 import { OrganizerAIStudio } from './components/OrganizerAIStudio';
 import { OrganizerNotifications } from './components/OrganizerNotifications';
+import { GuestProposalsModal } from './components/GuestProposalsModal';
 import {
   Clock,
   Sparkles,
@@ -89,6 +90,16 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [copiedLink, setCopiedLink] = useState(false);
+
+  // Guest Proposals History (allows friends to track their proposal status)
+  const [guestProposalIds, setGuestProposalIds] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('rdv_guest_proposals') || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [showGuestProposalsModal, setShowGuestProposalsModal] = useState(false);
 
   // Google Calendar Auth State
   const [googleUser, setGoogleUser] = useState<FirebaseUser | null>(null);
@@ -571,7 +582,24 @@ export default function App() {
       });
     } catch {}
 
-    setProposals((prev) => [newProp, ...prev]);
+      setProposals((prev) => [newProp, ...prev]);
+
+    // Save proposal to friend's browser storage for live status tracking
+    setGuestProposalIds((prev) => {
+      const updated = [newProp.id, ...prev.filter((id) => id !== newProp.id)];
+      try {
+        localStorage.setItem('rdv_guest_proposals', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+  };
+
+  const handleClearGuestProposals = () => {
+    setGuestProposalIds([]);
+    try {
+      localStorage.removeItem('rdv_guest_proposals');
+    } catch {}
+    setShowGuestProposalsModal(false);
   };
 
   // Join an existing confirmed slot (friend joins group activity)
@@ -878,6 +906,8 @@ export default function App() {
   });
 
   const pendingCount = proposals.filter((p) => p.status === 'pending').length;
+  const guestProposals = proposals.filter((p) => guestProposalIds.includes(p.id));
+  const hasAcceptedGuestProposal = guestProposals.some((p) => p.status === 'accepted');
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col selection:bg-amber-100 selection:text-amber-900">
@@ -960,25 +990,44 @@ export default function App() {
             </div>
           )}
 
-          {/* Zone 3: 1 Primary Action (Mode Toggle & Copy Link) */}
+          {/* Zone 3: 1 Primary Action (Mode Toggle & Copy Link for organizer only) */}
           <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={handleCopyLink}
-              className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer"
-              title="Copier le lien pour l'envoyer à vos amis"
-            >
-              {copiedLink ? (
-                <>
-                  <Check className="w-3.5 h-3.5 text-emerald-600" />
-                  <span className="text-emerald-700 font-bold">Lien copié !</span>
-                </>
-              ) : (
-                <>
-                  <Share2 className="w-3.5 h-3.5 text-slate-500" />
-                  <span className="hidden sm:inline">Partager aux amis</span>
-                </>
-              )}
-            </button>
+            {/* Guest live request status tracker */}
+            {guestProposals.length > 0 && currentView === 'friend' && (
+              <button
+                type="button"
+                onClick={() => setShowGuestProposalsModal(true)}
+                className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Consulter l'état de vos propositions"
+              >
+                <Clock className="w-3.5 h-3.5 text-amber-600" />
+                <span>Mes demandes ({guestProposals.length})</span>
+                {hasAcceptedGuestProposal && (
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Une proposition a été validée !" />
+                )}
+              </button>
+            )}
+
+            {/* Share link button ONLY visible to the organizer */}
+            {isOrganizerUnlocked && (
+              <button
+                onClick={handleCopyLink}
+                className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 flex items-center gap-1.5 transition-colors cursor-pointer"
+                title="Copier le lien pour l'envoyer à vos amis"
+              >
+                {copiedLink ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-600" />
+                    <span className="text-emerald-700 font-bold">Lien copié !</span>
+                  </>
+                ) : (
+                  <>
+                    <Share2 className="w-3.5 h-3.5 text-slate-500" />
+                    <span className="hidden sm:inline">Partager aux amis</span>
+                  </>
+                )}
+              </button>
+            )}
 
             {isOrganizerUnlocked ? (
               <div className="flex items-center gap-1.5">
@@ -1625,6 +1674,14 @@ export default function App() {
         isOpen={showChangePinModal}
         onClose={() => setShowChangePinModal(false)}
         onSavePin={handleChangePinCentralized}
+      />
+
+      {/* Guest Proposals Live Tracker Modal */}
+      <GuestProposalsModal
+        isOpen={showGuestProposalsModal}
+        onClose={() => setShowGuestProposalsModal(false)}
+        proposals={guestProposals}
+        onClearHistory={handleClearGuestProposals}
       />
     </div>
   );
