@@ -87,6 +87,26 @@ service cloud.firestore {
         data.targetMonth is number;
     }
 
+    function isValidActivitySuggestion(data) {
+      return data.keys().hasAll(['title', 'description', 'suggestedBy', 'status', 'createdAt']) &&
+        data.title is string && data.title.size() <= 120 &&
+        data.description is string && data.description.size() <= 1000 &&
+        data.suggestedBy is string && data.suggestedBy.size() <= 100 &&
+        data.status is string && (data.status == 'pending' || data.status == 'converted_to_activity' || data.status == 'accepted_duo' || data.status == 'declined') &&
+        data.createdAt is string && data.createdAt.size() <= 50 &&
+        (!('friendContact' in data) || (data.friendContact is string && data.friendContact.size() <= 150)) &&
+        (!('category' in data) || (data.category is string && data.category.size() <= 50)) &&
+        (!('duration' in data) || (data.duration is string && data.duration.size() <= 50)) &&
+        (!('locationType' in data) || (data.locationType is string && data.locationType.size() <= 80)) &&
+        (!('preferredDate' in data) || (data.preferredDate is string && data.preferredDate.size() <= 20)) &&
+        (!('preferredSlot' in data) || (data.preferredSlot is string && data.preferredSlot.size() <= 30)) &&
+        (!('monthKey' in data) || (data.monthKey is string && data.monthKey.size() <= 20)) &&
+        (!('adminNote' in data) || (data.adminNote is string && data.adminNote.size() <= 500)) &&
+        (!('resultingActivityId' in data) || (data.resultingActivityId is string && data.resultingActivityId.size() <= 128)) &&
+        (!('resultingSlotDate' in data) || (data.resultingSlotDate is string && data.resultingSlotDate.size() <= 20)) &&
+        (!('resultingSlotType' in data) || (data.resultingSlotType is string && data.resultingSlotType.size() <= 30));
+    }
+
     // Default safety deny
     match /{document=**} {
       allow read, write: if false;
@@ -129,6 +149,14 @@ service cloud.firestore {
       allow read: if true;
       allow create, update: if isAdmin() && isValidId(settingId) && isValidSettings(incoming());
       allow delete: if isAdmin() && isValidId(settingId);
+    }
+
+    // Activity Suggestions collection
+    match /activitySuggestions/{suggestionId} {
+      allow read: if true;
+      allow create: if isValidId(suggestionId) && isValidActivitySuggestion(incoming());
+      allow update: if isAdmin() && isValidId(suggestionId) && isValidActivitySuggestion(incoming());
+      allow delete: if isAdmin() && isValidId(suggestionId);
     }
   }
 }

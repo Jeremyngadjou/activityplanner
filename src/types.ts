@@ -82,5 +82,25 @@ export interface AppSettings {
   targetMonth: number;
 }
 
+export interface ActivitySuggestion {
+  id: string;
+  title: string;
+  description: string;
+  suggestedBy: string;
+  friendContact?: string;
+  category?: Category;
+  duration?: string;
+  locationType?: string;
+  preferredDate?: string;
+  preferredSlot?: SlotType;
+  monthKey?: string;
+  status: 'pending' | 'converted_to_activity' | 'accepted_duo' | 'declined';
+  createdAt: string;
+  adminNote?: string;
+  resultingActivityId?: string;
+  resultingSlotDate?: string;
+  resultingSlotType?: SlotType;
+}
+
 export type AppView = 'friend' | 'organizer';
-export type OrganizerTab = 'inbox' | 'calendar' | 'activities' | 'ai-studio';
+export type OrganizerTab = 'inbox' | 'suggestions' | 'calendar' | 'activities' | 'ai-studio';

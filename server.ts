@@ -11,7 +11,21 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-const port = parseInt(process.env.PORT || '3000', 10);
+
+function resolvePort(): number {
+  const portArgIdx = process.argv.findIndex((arg) => arg === '--port' || arg === '-p');
+  if (portArgIdx !== -1 && process.argv[portArgIdx + 1]) {
+    const val = parseInt(process.argv[portArgIdx + 1], 10);
+    if (!isNaN(val) && val > 0) return val;
+  }
+  if (process.env.PORT && process.env.PORT !== '8080') {
+    const val = parseInt(process.env.PORT, 10);
+    if (!isNaN(val) && val > 0) return val;
+  }
+  return 3000;
+}
+
+const port = resolvePort();
 
 // Resolve data directory safely (works both from root and from dist/)
 const dataDir = fs.existsSync(path.join(__dirname, 'data'))
@@ -51,6 +65,7 @@ interface AppStore {
   proposals: any[];
   scheduleSlots: any[];
   notifications: AppNotification[];
+  suggestions: any[];
 }
 
 const readStore = async (): Promise<AppStore> => {
@@ -64,6 +79,7 @@ const readStore = async (): Promise<AppStore> => {
     proposals: [],
     scheduleSlots: [],
     notifications: [],
+    suggestions: [],
   };
 
   try {
@@ -87,6 +103,7 @@ const readStore = async (): Promise<AppStore> => {
       proposals: parsed.proposals || [],
       scheduleSlots: parsed.scheduleSlots || [],
       notifications: parsed.notifications || [],
+      suggestions: parsed.suggestions || [],
     };
   } catch (err) {
     await fs.promises.writeFile(DATA_FILE, JSON.stringify(defaultData, null, 2), 'utf-8');
@@ -129,6 +146,7 @@ app.get('/api/data', async (_req, res) => {
       scheduleSlots: store.scheduleSlots,
       notifications: store.notifications,
       settings: store.settings,
+      suggestions: store.suggestions || [],
     });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });
@@ -462,6 +480,77 @@ app.post('/api/slots/join', async (req, res) => {
   }
 });
 
+// Activity suggestions endpoints
+app.post('/api/suggestions', async (req, res) => {
+  try {
+    const store = await readStore();
+    if (!Array.isArray(store.suggestions)) store.suggestions = [];
+
+    const newSuggestion = {
+      ...req.body,
+      id: req.body.id || `sug-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      status: req.body.status || 'pending',
+      createdAt: req.body.createdAt || new Date().toISOString(),
+    };
+    store.suggestions.unshift(newSuggestion);
+
+    // Create organizer notification
+    store.notifications.unshift({
+      id: `notif-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      type: 'system',
+      title: 'Nouvelle idée d’activité suggérée',
+      message: `${newSuggestion.suggestedBy} a suggéré l’activité : « ${newSuggestion.title} ».`,
+      activityTitle: newSuggestion.title,
+      friendName: newSuggestion.suggestedBy,
+      createdAt: new Date().toISOString(),
+      read: false,
+    });
+
+    await writeStore(store);
+    res.json({ success: true, suggestion: newSuggestion });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.put('/api/suggestions/:id/status', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, adminNote, extraFields } = req.body;
+    const store = await readStore();
+    if (!Array.isArray(store.suggestions)) store.suggestions = [];
+
+    const found = store.suggestions.find((s) => s.id === id);
+    if (!found) {
+      return res.status(404).json({ success: false, error: 'Suggestion introuvable' });
+    }
+
+    if (status) found.status = status;
+    if (adminNote !== undefined) found.adminNote = adminNote;
+    if (extraFields && typeof extraFields === 'object') {
+      Object.assign(found, extraFields);
+    }
+
+    await writeStore(store);
+    res.json({ success: true, suggestion: found });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.delete('/api/suggestions/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const store = await readStore();
+    if (!Array.isArray(store.suggestions)) store.suggestions = [];
+    store.suggestions = store.suggestions.filter((s) => s.id !== id);
+    await writeStore(store);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Centralized Notifications endpoints
 app.get('/api/notifications', async (_req, res) => {
   try {
@@ -549,6 +638,7 @@ app.post('/api/clear-all', async (_req, res) => {
       proposals: [],
       scheduleSlots: [],
       notifications: [],
+      suggestions: [],
     };
     await writeStore(empty);
     res.json({ success: true, ...empty });
@@ -731,7 +821,11 @@ async function startServer() {
   if (!isProd) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: false,
+        watch: null,
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -748,8 +842,16 @@ async function startServer() {
     });
   }
 
-  app.listen(port, '0.0.0.0', () => {
+  const server = app.listen(port, '0.0.0.0', () => {
     console.log(`Server listening on http://0.0.0.0:${port} (${isProd ? 'production' : 'development'})`);
+  });
+
+  server.on('error', (err: any) => {
+    if (err.code === 'EADDRINUSE') {
+      console.warn(`[dev-server] Port ${port} is in use; waiting for existing process to release...`);
+    } else {
+      console.error('[dev-server] Server error:', err);
+    }
   });
 }
 

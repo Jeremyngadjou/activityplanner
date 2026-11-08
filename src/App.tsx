@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Activity, Proposal, ScheduleSlot, AppNotification, AppView, OrganizerTab, SlotType } from './types';
+import { Activity, Proposal, ScheduleSlot, AppNotification, AppView, OrganizerTab, SlotType, ActivitySuggestion } from './types';
 import { INITIAL_ACTIVITIES } from './data/defaultActivities';
 import { ActivityCard } from './components/ActivityCard';
 import { BookingModal } from './components/BookingModal';
@@ -9,6 +9,8 @@ import { OrganizerActivityManager } from './components/OrganizerActivityManager'
 import { OrganizerAIStudio } from './components/OrganizerAIStudio';
 import { OrganizerNotifications } from './components/OrganizerNotifications';
 import { GuestProposalsModal } from './components/GuestProposalsModal';
+import { SuggestActivityModal } from './components/SuggestActivityModal';
+import { OrganizerSuggestionsManager } from './components/OrganizerSuggestionsManager';
 import {
   Clock,
   Sparkles,
@@ -18,6 +20,7 @@ import {
   Search,
   CheckCircle2,
   Share2,
+  Lightbulb,
   Check,
   Plus,
   ArrowRight,
@@ -58,6 +61,10 @@ import {
   deleteScheduleSlotFromFirestore,
   saveSettingsToFirestore,
   joinScheduleSlotInFirestore,
+  subscribeActivitySuggestions,
+  createActivitySuggestionInFirestore,
+  updateActivitySuggestionStatusInFirestore,
+  deleteActivitySuggestionFromFirestore,
 } from './services/firestoreSync';
 
 const MONTH_NAMES = [
@@ -83,18 +90,27 @@ export default function App() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [scheduleSlots, setScheduleSlots] = useState<ScheduleSlot[]>([]);
+  const [suggestions, setSuggestions] = useState<ActivitySuggestion[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // Modal & filter state
   const [selectedActivityForBooking, setSelectedActivityForBooking] = useState<Activity | null>(null);
+  const [showSuggestModal, setShowSuggestModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [copiedLink, setCopiedLink] = useState(false);
 
-  // Guest Proposals History (allows friends to track their proposal status)
+  // Guest Proposals History (allows friends to track their proposal & suggestion status)
   const [guestProposalIds, setGuestProposalIds] = useState<string[]>(() => {
     try {
       return JSON.parse(localStorage.getItem('rdv_guest_proposals') || '[]');
+    } catch {
+      return [];
+    }
+  });
+  const [guestSuggestionIds, setGuestSuggestionIds] = useState<string[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('rdv_guest_suggestions') || '[]');
     } catch {
       return [];
     }
@@ -394,6 +410,10 @@ export default function App() {
             setNotifications(data.notifications);
           }
 
+          if (Array.isArray(data.suggestions)) {
+            setSuggestions(data.suggestions);
+          }
+
           if (data.settings) {
             const params = new URLSearchParams(window.location.search);
             if (!params.get('m')) {
@@ -419,6 +439,9 @@ export default function App() {
 
       const savedSlots = localStorage.getItem('rdv_nov_slots');
       setScheduleSlots(savedSlots ? JSON.parse(savedSlots) : []);
+
+      const savedSugs = localStorage.getItem('rdv_nov_suggestions');
+      setSuggestions(savedSugs ? JSON.parse(savedSugs) : []);
     } finally {
       if (showLoading) setIsLoading(false);
     }
@@ -460,7 +483,12 @@ export default function App() {
       }
     });
 
-    // 5. Auth State Listener
+    // 5. Subscribe to Activity Suggestions in real-time
+    const unsubSuggestions = subscribeActivitySuggestions((liveSuggestions) => {
+      setSuggestions(liveSuggestions);
+    });
+
+    // 6. Auth State Listener
     const unsubAuth = initAuth(
       (user, token) => {
         setGoogleUser(user);
@@ -486,6 +514,7 @@ export default function App() {
       unsubProposals?.();
       unsubSlots?.();
       unsubSettings?.();
+      unsubSuggestions?.();
       unsubAuth?.();
       clearInterval(pollInterval);
     };
@@ -596,10 +625,253 @@ export default function App() {
 
   const handleClearGuestProposals = () => {
     setGuestProposalIds([]);
+    setGuestSuggestionIds([]);
     try {
       localStorage.removeItem('rdv_guest_proposals');
+      localStorage.removeItem('rdv_guest_suggestions');
     } catch {}
     setShowGuestProposalsModal(false);
+  };
+
+  // Guest submits an activity suggestion
+  const handleCreateSuggestion = async (
+    data: Omit<ActivitySuggestion, 'id' | 'status' | 'createdAt'>
+  ) => {
+    const newSug: ActivitySuggestion = {
+      ...data,
+      id: `sug-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+    };
+
+    try {
+      await createActivitySuggestionInFirestore(newSug);
+    } catch (e) {
+      console.warn('Erreur creation suggestion Firestore:', e);
+    }
+
+    try {
+      await fetch('/api/suggestions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newSug),
+      });
+    } catch {}
+
+    setSuggestions((prev) => [newSug, ...prev]);
+
+    setGuestSuggestionIds((prev) => {
+      const updated = [newSug.id, ...prev.filter((id) => id !== newSug.id)];
+      try {
+        localStorage.setItem('rdv_guest_suggestions', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+  };
+
+  // Organizer converts suggestion to a full public activity card
+  const handleConvertToActivity = async (suggestion: ActivitySuggestion) => {
+    const newAct: Activity = {
+      id: `act-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      title: suggestion.title,
+      description: suggestion.description,
+      category: suggestion.category || 'Gastronomie',
+      duration: suggestion.duration || '2h',
+      locationType: suggestion.locationType || 'En ville',
+      energyLevel: 'Modéré',
+      accentGradient: 'from-amber-600 via-orange-500 to-amber-700',
+      iconName: suggestion.category || 'Calendar',
+      isOrganizerCustom: true,
+      monthKey: suggestion.monthKey || activeMonthKey,
+    };
+
+    await handleAddActivity(newAct);
+
+    try {
+      await updateActivitySuggestionStatusInFirestore(
+        suggestion.id,
+        'converted_to_activity',
+        `Ajoutée aux activités pour tout le monde (${suggestion.monthKey || activeMonthKey})`,
+        { resultingActivityId: newAct.id }
+      );
+    } catch (e) {
+      console.warn('Erreur conversion suggestion Firestore:', e);
+    }
+
+    try {
+      await fetch(`/api/suggestions/${suggestion.id}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: 'converted_to_activity',
+          adminNote: `Ajoutée aux activités`,
+          extraFields: { resultingActivityId: newAct.id },
+        }),
+      });
+    } catch {}
+
+    setSuggestions((prev) =>
+      prev.map((s) =>
+        s.id === suggestion.id
+          ? {
+              ...s,
+              status: 'converted_to_activity',
+              adminNote: 'Ajoutée aux activités',
+              resultingActivityId: newAct.id,
+            }
+          : s
+      )
+    );
+  };
+
+  // Organizer accepts suggestion directly as a 1-on-1 outing
+  const handleAcceptDuo = async (
+    suggestion: ActivitySuggestion,
+    date: string,
+    slot: SlotType
+  ) => {
+    try {
+      await saveScheduleSlotToFirestore({
+        date,
+        slot,
+        proposalId: suggestion.id,
+        activityId: `sug-${suggestion.id}`,
+        activityTitle: suggestion.title,
+        friendName: suggestion.suggestedBy,
+        note: `Sortie à 2 suggérée par ${suggestion.suggestedBy}.${
+          suggestion.description ? ` Détails : ${suggestion.description}` : ''
+        }`,
+      });
+    } catch (e) {
+      console.warn('Erreur réservation créneau duo Firestore:', e);
+    }
+
+    try {
+      await updateActivitySuggestionStatusInFirestore(
+        suggestion.id,
+        'accepted_duo',
+        `Sortie à 2 validée pour le ${date} !`,
+        { resultingSlotDate: date, resultingSlotType: slot }
+      );
+    } catch (e) {
+      console.warn('Erreur mise à jour suggestion duo Firestore:', e);
+    }
+
+    try {
+      await fetch(`/api/suggestions/${suggestion.id}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: 'accepted_duo',
+          adminNote: `Sortie à 2 validée pour le ${date} !`,
+          extraFields: { resultingSlotDate: date, resultingSlotType: slot },
+        }),
+      });
+    } catch {}
+
+    setScheduleSlots((prev) => [
+      ...prev.filter((s) => !(s.date === date && s.slot === slot)),
+      {
+        date,
+        slot,
+        proposalId: suggestion.id,
+        activityId: `sug-${suggestion.id}`,
+        activityTitle: suggestion.title,
+        friendName: suggestion.suggestedBy,
+        note: `Sortie à 2 suggérée par ${suggestion.suggestedBy}.${
+          suggestion.description ? ` Détails : ${suggestion.description}` : ''
+        }`,
+      },
+    ]);
+
+    setSuggestions((prev) =>
+      prev.map((s) =>
+        s.id === suggestion.id
+          ? {
+              ...s,
+              status: 'accepted_duo',
+              adminNote: `Sortie à 2 validée pour le ${date} !`,
+              resultingSlotDate: date,
+              resultingSlotType: slot,
+            }
+          : s
+      )
+    );
+
+    // Automatic Google Calendar sync for this 1-on-1 outing
+    const directUrl = createGoogleCalendarWebUrl({
+      title: suggestion.title,
+      friendName: suggestion.suggestedBy,
+      date,
+      slot,
+      note: suggestion.description,
+    });
+
+    const token = googleToken || getStoredAccessToken();
+    if (token) {
+      try {
+        await addEventToGoogleCalendar(token, {
+          title: suggestion.title,
+          friendName: suggestion.suggestedBy,
+          date,
+          slot,
+          note: suggestion.description,
+        });
+        setCalendarSyncNotice({
+          type: 'success',
+          message: `Sortie à 2 « ${suggestion.title} avec ${suggestion.suggestedBy} » ajoutée automatiquement à votre Google Calendar !`,
+          directUrl,
+        });
+      } catch (calErr: any) {
+        setCalendarSyncNotice({
+          type: 'warning',
+          message: `Créneau à 2 bloqué. Synchronisation Google Agenda en attente (${calErr?.message || 'reconnexion nécessaire'}).`,
+          directUrl,
+        });
+      }
+    } else {
+      setCalendarSyncNotice({
+        type: 'info',
+        message: `Sortie à 2 bloquée au planning. Vous pouvez l'ajouter à votre Google Calendar :`,
+        directUrl,
+      });
+    }
+  };
+
+  // Organizer declines suggestion
+  const handleDeclineSuggestion = async (suggestionId: string, adminNote?: string) => {
+    try {
+      await updateActivitySuggestionStatusInFirestore(suggestionId, 'declined', adminNote);
+    } catch (e) {
+      console.warn('Erreur refus suggestion Firestore:', e);
+    }
+
+    try {
+      await fetch(`/api/suggestions/${suggestionId}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'declined', adminNote }),
+      });
+    } catch {}
+
+    setSuggestions((prev) =>
+      prev.map((s) => (s.id === suggestionId ? { ...s, status: 'declined', adminNote } : s))
+    );
+  };
+
+  // Organizer deletes suggestion
+  const handleDeleteSuggestion = async (suggestionId: string) => {
+    try {
+      await deleteActivitySuggestionFromFirestore(suggestionId);
+    } catch (e) {
+      console.warn('Erreur suppression suggestion Firestore:', e);
+    }
+
+    try {
+      await fetch(`/api/suggestions/${suggestionId}`, { method: 'DELETE' });
+    } catch {}
+
+    setSuggestions((prev) => prev.filter((s) => s.id !== suggestionId));
   };
 
   // Join an existing confirmed slot (friend joins group activity)
@@ -906,8 +1178,13 @@ export default function App() {
   });
 
   const pendingCount = proposals.filter((p) => p.status === 'pending').length;
+  const pendingSuggestionsCount = suggestions.filter((s) => s.status === 'pending').length;
   const guestProposals = proposals.filter((p) => guestProposalIds.includes(p.id));
-  const hasAcceptedGuestProposal = guestProposals.some((p) => p.status === 'accepted');
+  const guestSuggestions = suggestions.filter((s) => guestSuggestionIds.includes(s.id));
+  const guestTotalCount = guestProposals.length + guestSuggestions.length;
+  const hasAcceptedGuestProposal =
+    guestProposals.some((p) => p.status === 'accepted') ||
+    guestSuggestions.some((s) => s.status === 'accepted_duo' || s.status === 'converted_to_activity');
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col selection:bg-amber-100 selection:text-amber-900">
@@ -926,7 +1203,7 @@ export default function App() {
 
           {/* Zone 2: Navigation Links */}
           {isOrganizerUnlocked ? (
-            <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
+            <nav className="hidden md:flex items-center gap-5 text-sm font-medium text-slate-600">
               <button
                 onClick={() => setCurrentView('friend')}
                 className={`hover:text-slate-900 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
@@ -969,6 +1246,25 @@ export default function App() {
               <button
                 onClick={() => {
                   setCurrentView('organizer');
+                  setOrganizerTab('suggestions');
+                }}
+                className={`hover:text-slate-900 transition-colors whitespace-nowrap shrink-0 cursor-pointer flex items-center gap-1.5 ${
+                  currentView === 'organizer' && organizerTab === 'suggestions'
+                    ? 'text-amber-700 font-semibold underline underline-offset-8'
+                    : ''
+                }`}
+              >
+                <Lightbulb className="w-3.5 h-3.5 text-amber-500" />
+                <span>Suggestions</span>
+                {pendingSuggestionsCount > 0 && (
+                  <span className="w-4 h-4 rounded-full bg-amber-500 text-white text-[10px] flex items-center justify-center font-bold">
+                    {pendingSuggestionsCount}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => {
+                  setCurrentView('organizer');
                   setOrganizerTab('activities');
                 }}
                 className={`hover:text-slate-900 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
@@ -993,17 +1289,17 @@ export default function App() {
           {/* Zone 3: 1 Primary Action (Mode Toggle & Copy Link for organizer only) */}
           <div className="flex items-center gap-2 shrink-0">
             {/* Guest live request status tracker */}
-            {guestProposals.length > 0 && currentView === 'friend' && (
+            {guestTotalCount > 0 && currentView === 'friend' && (
               <button
                 type="button"
                 onClick={() => setShowGuestProposalsModal(true)}
                 className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 flex items-center gap-1.5 transition-colors cursor-pointer"
-                title="Consulter l'état de vos propositions"
+                title="Consulter l'état de vos propositions et suggestions"
               >
                 <Clock className="w-3.5 h-3.5 text-amber-600" />
-                <span>Mes demandes ({guestProposals.length})</span>
+                <span>Mes demandes ({guestTotalCount})</span>
                 {hasAcceptedGuestProposal && (
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Une proposition a été validée !" />
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Une demande a été validée !" />
                 )}
               </button>
             )}
@@ -1118,15 +1414,26 @@ export default function App() {
                   Sorties & Activités
                 </h1>
                 <p className="text-xs sm:text-sm text-slate-500 mt-0.5">
-                  Choisissez une activité pour convenir d'une date et d'un créneau ensemble.
+                  Choisissez une activité pour convenir d'une date et d'un créneau ensemble, ou suggérez votre propre idée.
                 </p>
               </div>
 
-              {/* Guest Interactive Month Navigator */}
-              <div className="flex flex-wrap items-center gap-2 bg-white p-2 rounded-2xl border border-slate-200 shadow-xs">
+              <div className="flex flex-wrap items-center gap-2.5">
                 <button
                   type="button"
-                  onClick={handlePrevMonth}
+                  onClick={() => setShowSuggestModal(true)}
+                  className="px-3.5 py-2 text-xs font-semibold rounded-2xl bg-amber-600 hover:bg-amber-700 text-white flex items-center gap-2 shadow-xs transition-colors cursor-pointer"
+                  title="Vous avez une envie ou une idée de sortie ? Proposez-la directement à l'organisateur !"
+                >
+                  <Lightbulb className="w-4 h-4 text-amber-200" />
+                  <span>Suggérer une activité</span>
+                </button>
+
+                {/* Guest Interactive Month Navigator */}
+                <div className="flex flex-wrap items-center gap-2 bg-white p-2 rounded-2xl border border-slate-200 shadow-xs">
+                  <button
+                    type="button"
+                    onClick={handlePrevMonth}
                   disabled={isAtMinMonth}
                   className="p-1.5 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-900 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                   title={isAtMinMonth ? 'Novembre 2026 est le premier mois disponible' : 'Mois précédent'}
@@ -1180,6 +1487,7 @@ export default function App() {
                 </span>
               </div>
             </div>
+          </div>
 
             {/* Filter & Search Bar (only if activities exist for this month) */}
             {monthActivities.length > 0 && (
@@ -1380,6 +1688,23 @@ export default function App() {
                 </button>
 
                 <button
+                  onClick={() => setOrganizerTab('suggestions')}
+                  className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-colors cursor-pointer ${
+                    organizerTab === 'suggestions'
+                      ? 'bg-slate-900 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                  }`}
+                >
+                  <Lightbulb className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Idées d'invités</span>
+                  {pendingSuggestionsCount > 0 && (
+                    <span className="w-4 h-4 rounded-full bg-amber-500 text-white text-[10px] flex items-center justify-center font-bold">
+                      {pendingSuggestionsCount}
+                    </span>
+                  )}
+                </button>
+
+                <button
                   onClick={() => setOrganizerTab('calendar')}
                   className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 transition-colors cursor-pointer ${
                     organizerTab === 'calendar'
@@ -1480,6 +1805,18 @@ export default function App() {
                 onConnectGoogleCalendar={handleConnectGoogleCalendar}
                 calendarSyncNotice={calendarSyncNotice}
                 onDismissSyncNotice={() => setCalendarSyncNotice(null)}
+              />
+            )}
+
+            {organizerTab === 'suggestions' && (
+              <OrganizerSuggestionsManager
+                suggestions={suggestions}
+                onConvertToActivity={handleConvertToActivity}
+                onAcceptDuo={handleAcceptDuo}
+                onDeclineSuggestion={handleDeclineSuggestion}
+                onDeleteSuggestion={handleDeleteSuggestion}
+                activeYear={activeYear}
+                activeMonth={activeMonth}
               />
             )}
 
@@ -1676,12 +2013,21 @@ export default function App() {
         onSavePin={handleChangePinCentralized}
       />
 
-      {/* Guest Proposals Live Tracker Modal */}
+      {/* Guest Proposals & Suggestions Live Tracker Modal */}
       <GuestProposalsModal
         isOpen={showGuestProposalsModal}
         onClose={() => setShowGuestProposalsModal(false)}
         proposals={guestProposals}
+        suggestions={guestSuggestions}
         onClearHistory={handleClearGuestProposals}
+      />
+
+      {/* Guest Suggestion Modal */}
+      <SuggestActivityModal
+        isOpen={showSuggestModal}
+        onClose={() => setShowSuggestModal(false)}
+        onSubmitSuggestion={handleCreateSuggestion}
+        currentMonthKey={activeMonthKey}
       />
     </div>
   );

@@ -11,7 +11,16 @@ import {
   where,
 } from 'firebase/firestore';
 import { db, auth, handleFirestoreError, OperationType, ADMIN_EMAIL } from '../firebase';
-import { Activity, Proposal, ScheduleSlot, AppNotification, AppSettings, SlotType, SlotParticipant } from '../types';
+import {
+  Activity,
+  Proposal,
+  ScheduleSlot,
+  AppNotification,
+  AppSettings,
+  SlotType,
+  SlotParticipant,
+  ActivitySuggestion,
+} from '../types';
 import { INITIAL_ACTIVITIES } from '../data/defaultActivities';
 
 // Check if currently authenticated user is the designated admin
@@ -419,3 +428,86 @@ export const saveSettingsToFirestore = async (targetYear: number, targetMonth: n
     handleFirestoreError(error, OperationType.WRITE, path);
   }
 };
+
+// Activity Suggestions Subscriptions & Mutations
+export const subscribeActivitySuggestions = (
+  onData: (suggestions: ActivitySuggestion[]) => void
+): (() => void) => {
+  const colRef = collection(db, 'activitySuggestions');
+  const unsubscribe = onSnapshot(
+    colRef,
+    (snapshot) => {
+      const list: ActivitySuggestion[] = [];
+      snapshot.forEach((d) => {
+        list.push({ ...(d.data() as ActivitySuggestion), id: d.id });
+      });
+      // Sort newest first
+      list.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      onData(list);
+    },
+    (error) => {
+      console.warn('Activity suggestions listener error:', error);
+      handleFirestoreError(error, OperationType.GET, 'activitySuggestions');
+    }
+  );
+  return unsubscribe;
+};
+
+export const createActivitySuggestionInFirestore = async (
+  suggestion: ActivitySuggestion
+): Promise<void> => {
+  const path = `activitySuggestions/${suggestion.id}`;
+  try {
+    const docRef = doc(db, 'activitySuggestions', suggestion.id);
+    await setDoc(docRef, suggestion);
+
+    // Create a quiet organizer notification
+    try {
+      const notifId = `notif-sug-${Date.now()}`;
+      const notifRef = doc(db, 'notifications', notifId);
+      await setDoc(notifRef, {
+        id: notifId,
+        type: 'system',
+        title: 'Nouvelle idée d’activité suggérée',
+        message: `${suggestion.suggestedBy} a suggéré l’activité : « ${suggestion.title} ».`,
+        activityTitle: suggestion.title,
+        friendName: suggestion.suggestedBy,
+        createdAt: new Date().toISOString(),
+        read: false,
+      });
+    } catch {}
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, path);
+  }
+};
+
+export const updateActivitySuggestionStatusInFirestore = async (
+  id: string,
+  status: ActivitySuggestion['status'],
+  adminNote?: string,
+  extraFields?: Partial<ActivitySuggestion>
+): Promise<void> => {
+  const path = `activitySuggestions/${id}`;
+  try {
+    const docRef = doc(db, 'activitySuggestions', id);
+    const updatePayload: Record<string, any> = { status };
+    if (adminNote !== undefined) updatePayload.adminNote = adminNote;
+    if (extraFields) {
+      Object.assign(updatePayload, extraFields);
+    }
+    await setDoc(docRef, updatePayload, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+};
+
+export const deleteActivitySuggestionFromFirestore = async (id: string): Promise<void> => {
+  const path = `activitySuggestions/${id}`;
+  try {
+    const docRef = doc(db, 'activitySuggestions', id);
+    await deleteDoc(docRef);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+};
+

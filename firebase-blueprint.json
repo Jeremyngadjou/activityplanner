@@ -82,6 +82,30 @@
         "targetMonth": { "type": "number" }
       },
       "required": ["targetYear", "targetMonth"]
+    },
+    "ActivitySuggestion": {
+      "title": "ActivitySuggestion",
+      "description": "An activity suggested by a friend that the organizer can add to the catalog or accept as a 1-on-1 outing",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 1000 },
+        "suggestedBy": { "type": "string", "maxLength": 100 },
+        "friendContact": { "type": "string", "maxLength": 150 },
+        "category": { "type": "string", "maxLength": 50 },
+        "duration": { "type": "string", "maxLength": 50 },
+        "locationType": { "type": "string", "maxLength": 80 },
+        "preferredDate": { "type": "string", "maxLength": 20 },
+        "preferredSlot": { "type": "string", "maxLength": 30 },
+        "monthKey": { "type": "string", "maxLength": 20 },
+        "status": { "type": "string", "enum": ["pending", "converted_to_activity", "accepted_duo", "declined"] },
+        "createdAt": { "type": "string", "maxLength": 50 },
+        "adminNote": { "type": "string", "maxLength": 500 },
+        "resultingActivityId": { "type": "string", "maxLength": 128 },
+        "resultingSlotDate": { "type": "string", "maxLength": 20 },
+        "resultingSlotType": { "type": "string", "maxLength": 30 }
+      },
+      "required": ["title", "description", "suggestedBy", "status", "createdAt"]
     }
   },
   "firestore": {
@@ -104,6 +128,10 @@
     "/settings/{settingId}": {
       "schema": "AppSettings",
       "description": "Application settings including target active month"
+    },
+    "/activitySuggestions/{suggestionId}": {
+      "schema": "ActivitySuggestion",
+      "description": "Activity suggestions proposed by friends"
     }
   }
 }
