@@ -27,6 +27,7 @@ interface OrganizerSuggestionsManagerProps {
     date: string,
     slot: SlotType
   ) => Promise<void>;
+  onCancelDuo?: (suggestion: ActivitySuggestion) => Promise<void>;
   onDeclineSuggestion: (suggestionId: string, adminNote?: string) => Promise<void>;
   onDeleteSuggestion: (suggestionId: string) => Promise<void>;
   activeYear: number;
@@ -43,6 +44,7 @@ export const OrganizerSuggestionsManager: React.FC<OrganizerSuggestionsManagerPr
   suggestions,
   onConvertToActivity,
   onAcceptDuo,
+  onCancelDuo,
   onDeclineSuggestion,
   onDeleteSuggestion,
   activeYear,
@@ -367,6 +369,18 @@ export const OrganizerSuggestionsManager: React.FC<OrganizerSuggestionsManagerPr
                           <span>Refuser</span>
                         </button>
                       </>
+                    )}
+
+                    {isDuo && onCancelDuo && (
+                      <button
+                        type="button"
+                        onClick={() => onCancelDuo(sug)}
+                        className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-colors cursor-pointer"
+                        title="Annuler cette sortie à 2 et libérer le créneau dans le planning"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        <span>Quitter / Annuler la sortie à 2</span>
+                      </button>
                     )}
 
                     {isDeclined && (

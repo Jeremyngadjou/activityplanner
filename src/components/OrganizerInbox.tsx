@@ -417,10 +417,13 @@ export const OrganizerInbox: React.FC<OrganizerInboxProps> = ({
                           <ExternalLink className="w-3 h-3 text-slate-400" />
                         </a>
                         <button
+                          type="button"
                           onClick={() => onDeclineProposal(proposal.id, 'Annulé par l’organisateur')}
-                          className="text-xs text-slate-500 hover:text-rose-600 underline transition-colors cursor-pointer"
+                          className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold rounded-xl flex items-center gap-1 transition-colors cursor-pointer"
+                          title="Annuler cette activité et libérer le créneau dans le planning"
                         >
-                          Annuler
+                          <X className="w-3.5 h-3.5" />
+                          <span>Annuler / Libérer créneau</span>
                         </button>
                       </div>
                     )}

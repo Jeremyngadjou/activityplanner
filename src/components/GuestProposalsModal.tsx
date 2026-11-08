@@ -20,6 +20,7 @@ interface GuestProposalsModalProps {
   proposals: Proposal[];
   suggestions: ActivitySuggestion[];
   onClearHistory: () => void;
+  onCancelProposal?: (proposalId: string) => Promise<void>;
 }
 
 const slotLabels: Record<SlotType, string> = {
@@ -34,6 +35,7 @@ export const GuestProposalsModal: React.FC<GuestProposalsModalProps> = ({
   proposals,
   suggestions,
   onClearHistory,
+  onCancelProposal,
 }) => {
   const [activeTab, setActiveTab] = useState<'all' | 'proposals' | 'suggestions'>('all');
 
@@ -210,6 +212,20 @@ export const GuestProposalsModal: React.FC<GuestProposalsModalProps> = ({
                         <div className="flex items-start gap-1.5 text-xs text-slate-500 italic bg-slate-50 p-2.5 rounded-xl border border-slate-200/80">
                           <MessageSquare className="w-3.5 h-3.5 text-slate-400 shrink-0 mt-0.5" />
                           <span>Votre mot : « {item.note} »</span>
+                        </div>
+                      )}
+
+                      {onCancelProposal && (
+                        <div className="flex items-center justify-end pt-1">
+                          <button
+                            type="button"
+                            onClick={() => onCancelProposal(item.id)}
+                            className="text-xs text-slate-400 hover:text-rose-600 font-medium transition-colors cursor-pointer flex items-center gap-1"
+                            title="Annuler et retirer cette demande"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                            <span>Annuler ma demande</span>
+                          </button>
                         </div>
                       )}
                     </div>

@@ -21,7 +21,7 @@ export const OrganizerAIStudio: React.FC<OrganizerAIStudioProps> = ({
   const [addedIndexes, setAddedIndexes] = useState<number[]>([]);
 
   // Image generation state
-  const [imagePrompt, setImagePrompt] = useState('Table de raclette conviviale et réconfortante en soirée d’automne avec amis, verres de vin et lumière tamisée');
+  const [imagePrompt, setImagePrompt] = useState('Sortie conviviale en groupe d’amis en extérieur sous une belle lumière dorée');
   const [imageModel, setImageModel] = useState<'gemini-3-pro-image-preview' | 'gemini-nano-banana-2.1'>('gemini-3-pro-image-preview');
   const [aspectRatio, setAspectRatio] = useState<'1:1' | '2:3' | '3:2' | '3:4' | '4:3' | '9:16' | '16:9' | '21:9'>('4:3');
   const [imageSize, setImageSize] = useState<'1K' | '2K' | '4K'>('1K');

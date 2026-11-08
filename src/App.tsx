@@ -653,6 +653,18 @@ export default function App() {
     setShowGuestProposalsModal(false);
   };
 
+  const handleCancelGuestProposal = async (proposalId: string) => {
+    setGuestProposalIds((prev) => {
+      const updated = prev.filter((id) => id !== proposalId);
+      try {
+        localStorage.setItem('rdv_guest_proposals', JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+
+    await handleDeclineProposal(proposalId, 'Demande annulée par l’invité');
+  };
+
   // Guest submits an activity suggestion
   const handleCreateSuggestion = async (
     data: Omit<ActivitySuggestion, 'id' | 'status' | 'createdAt'>
@@ -856,6 +868,57 @@ export default function App() {
         directUrl,
       });
     }
+  };
+
+  // Organizer cancels a duo outing (frees slot and sets suggestion back to pending)
+  const handleCancelDuo = async (suggestion: ActivitySuggestion) => {
+    const date = suggestion.resultingSlotDate;
+    const slot = suggestion.resultingSlotType;
+    if (date && slot) {
+      await handleRemoveSlot(date, slot);
+    } else {
+      const matchingSlot = scheduleSlots.find(
+        (s) => s.proposalId === suggestion.id || s.activityTitle === suggestion.title
+      );
+      if (matchingSlot) {
+        await handleRemoveSlot(matchingSlot.date, matchingSlot.slot);
+      }
+    }
+
+    try {
+      await updateActivitySuggestionStatusInFirestore(
+        suggestion.id,
+        'pending',
+        'Sortie à 2 annulée par l’organisateur'
+      );
+    } catch (e) {
+      console.warn('Erreur annulation sortie à 2 Firestore:', e);
+    }
+
+    try {
+      await fetch(`/api/suggestions/${suggestion.id}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: 'pending',
+          adminNote: 'Sortie à 2 annulée par l’organisateur',
+        }),
+      });
+    } catch {}
+
+    setSuggestions((prev) =>
+      prev.map((s) =>
+        s.id === suggestion.id
+          ? {
+              ...s,
+              status: 'pending',
+              adminNote: 'Sortie à 2 annulée par l’organisateur',
+              resultingSlotDate: undefined,
+              resultingSlotType: undefined,
+            }
+          : s
+      )
+    );
   };
 
   // Organizer declines suggestion
@@ -1842,6 +1905,7 @@ export default function App() {
                 suggestions={suggestions}
                 onConvertToActivity={handleConvertToActivity}
                 onAcceptDuo={handleAcceptDuo}
+                onCancelDuo={handleCancelDuo}
                 onDeclineSuggestion={handleDeclineSuggestion}
                 onDeleteSuggestion={handleDeleteSuggestion}
                 activeYear={activeYear}
@@ -1884,6 +1948,8 @@ export default function App() {
             handleCreateProposal(data);
           }}
           onJoinSlot={handleJoinSlot}
+          onRemoveSlot={handleRemoveSlot}
+          isOrganizer={isOrganizerUnlocked}
           defaultYear={activeYear}
           defaultMonth={activeMonth}
         />
@@ -2049,6 +2115,7 @@ export default function App() {
         proposals={guestProposals}
         suggestions={guestSuggestions}
         onClearHistory={handleClearGuestProposals}
+        onCancelProposal={handleCancelGuestProposal}
       />
 
       {/* Guest Suggestion Modal */}

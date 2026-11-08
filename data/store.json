@@ -1,5 +1,238 @@
 {
-  "activities": [],
-  "proposals": [],
-  "scheduleSlots": []
+  "organizerPin": "1126",
+  "settings": {
+    "targetYear": 2026,
+    "targetMonth": 10
+  },
+  "activities": [
+    {
+      "id": "act-1793492158572-efeu",
+      "locationType": "fontainebleau",
+      "iconName": "Sport",
+      "title": "randonnée",
+      "isOrganizerCustom": true,
+      "accentGradient": "from-emerald-600 via-teal-600 to-cyan-700",
+      "duration": "2h - 7h",
+      "energyLevel": "Modéré",
+      "description": "histoire de voir des paysage différents",
+      "category": "Sport",
+      "monthKey": "2026-11"
+    },
+    {
+      "id": "act-1793492276182-pnn8",
+      "category": "Sport",
+      "monthKey": "2026-11",
+      "title": "badminton",
+      "energyLevel": "Modéré",
+      "description": "si tu connais un lieu pour le faire je prend",
+      "duration": "1h - 3h",
+      "accentGradient": "from-amber-600 via-orange-500 to-amber-700",
+      "iconName": "Sport",
+      "locationType": "Pas défini",
+      "isOrganizerCustom": true
+    },
+    {
+      "id": "act-1793492417422-33n8",
+      "description": "nouveau concept avec les chasubles qui donne tes stat (drible, passes réussis, but, etc...)",
+      "energyLevel": "Intense",
+      "locationType": "Beachamp",
+      "iconName": "Sport",
+      "isOrganizerCustom": true,
+      "duration": "1h - 2h",
+      "title": "five",
+      "monthKey": "2026-11",
+      "category": "Sport",
+      "accentGradient": "from-emerald-600 via-teal-600 to-cyan-700"
+    },
+    {
+      "id": "act-1793492492191-vr18",
+      "locationType": "En ville",
+      "accentGradient": "from-indigo-600 via-purple-600 to-violet-700",
+      "bestSlots": [],
+      "iconName": "Sport",
+      "title": "Running",
+      "energyLevel": "Modéré",
+      "description": "Session tranquille pour voir sa fait quoi de courir en groupe",
+      "duration": "1h - 2h",
+      "isOrganizerCustom": true,
+      "category": "Sport",
+      "monthKey": "2026-11"
+    },
+    {
+      "id": "act-1794106096026-uokn",
+      "locationType": "C",
+      "iconName": "Gastronomie",
+      "title": "PEPE CHICKEN",
+      "accentGradient": "from-rose-600 via-red-500 to-amber-600",
+      "isOrganizerCustom": true,
+      "duration": "1h",
+      "bestSlots": [],
+      "description": "Le tenders le plus piquant askip. Qui est assez courageux pour le tester",
+      "energyLevel": "Chill",
+      "monthKey": "2026-11",
+      "category": "Gastronomie"
+    },
+    {
+      "id": "act-escape",
+      "locationType": "a voir",
+      "accentGradient": "from-amber-800 via-stone-700 to-amber-900",
+      "bestSlots": [
+        "afternoon",
+        "evening"
+      ],
+      "description": "est ce que c'est vraiment si chaud que ça",
+      "iconName": "Sport",
+      "suggestedParticipants": "3 à 6 personnes",
+      "monthKey": "2026-11",
+      "category": "Sport",
+      "title": "Escalade",
+      "isOrganizerCustom": false,
+      "energyLevel": "Modéré",
+      "duration": "2h"
+    }
+  ],
+  "proposals": [
+    {
+      "id": "prop-1793503198338-mzky",
+      "createdAt": "2026-11-01T03:19:58.338Z",
+      "slot": "evening",
+      "activityId": "act-1793492324197-x137",
+      "declineReason": "Annulé par l’organisateur",
+      "date": "2026-11-01",
+      "activityTitle": "Mooshi",
+      "friendName": "sgffs",
+      "friendContact": "gdfx",
+      "status": "declined",
+      "note": "gdfx"
+    },
+    {
+      "id": "prop-1793504508129-xyac",
+      "activityTitle": "Session Escalade de Bloc & Bière",
+      "activityId": "act-escalade",
+      "note": "S",
+      "friendName": "S",
+      "declineReason": "Annulé par l’organisateur",
+      "createdAt": "2026-11-01T03:41:48.129Z",
+      "slot": "afternoon",
+      "status": "declined",
+      "friendContact": "SS",
+      "date": "2026-11-01"
+    },
+    {
+      "id": "prop-1793504546241-j8me",
+      "slot": "afternoon",
+      "createdAt": "2026-11-01T03:42:26.241Z",
+      "date": "2026-11-01",
+      "activityTitle": "Session Escalade de Bloc & Bière",
+      "friendContact": "A",
+      "activityId": "act-escalade",
+      "friendName": "A",
+      "status": "declined",
+      "note": "A"
+    },
+    {
+      "id": "prop-1793985760252-ftbb",
+      "friendContact": "Dj",
+      "createdAt": "2026-11-06T17:22:40.252Z",
+      "note": "Dj",
+      "slot": "afternoon",
+      "friendName": "Dj",
+      "declineReason": "Annulé par l’organisateur",
+      "activityTitle": "Session Escalade de Bloc & Bière",
+      "date": "2026-11-06",
+      "activityId": "act-escalade",
+      "status": "declined"
+    },
+    {
+      "id": "prop-1794105141069-yq1y",
+      "friendContact": "yty",
+      "note": "hjg",
+      "createdAt": "2026-11-08T02:32:21.069Z",
+      "friendName": "try",
+      "status": "declined",
+      "declineReason": "Annulé par l’organisateur",
+      "date": "2026-11-08",
+      "activityId": "act-raclette",
+      "activityTitle": "Grande Raclette & Jeux au Chaud",
+      "slot": "afternoon"
+    },
+    {
+      "id": "prop-1794106371903-3c7p",
+      "createdAt": "2026-11-08T02:52:51.903Z",
+      "slot": "evening",
+      "activityId": "act-escape",
+      "status": "pending",
+      "friendName": "Mohamed",
+      "note": "Yahouu",
+      "date": "2026-11-13",
+      "activityTitle": "Escape Game Mystère & Enquêtes"
+    },
+    {
+      "id": "prop-1794106418054-fwtx",
+      "activityTitle": "Escape Game Mystère & Enquêtes",
+      "status": "pending",
+      "activityId": "act-escape",
+      "date": "2026-11-20",
+      "friendName": "Vutgtvu",
+      "slot": "evening",
+      "createdAt": "2026-11-08T02:53:38.054Z"
+    },
+    {
+      "id": "prop-1794106501454-l306",
+      "slot": "morning",
+      "friendName": "Jeremy",
+      "activityTitle": "PEPE CHICKEN",
+      "activityId": "act-1794106096026-uokn",
+      "date": "2026-11-09",
+      "note": "J’ai faim",
+      "createdAt": "2026-11-08T02:55:01.454Z",
+      "status": "pending"
+    },
+    {
+      "id": "prop-1794106801097-e7p5",
+      "date": "2026-11-08",
+      "slot": "afternoon",
+      "activityTitle": "randonnée",
+      "friendContact": "tfgz",
+      "note": "fg'zeG",
+      "friendName": "(ret",
+      "status": "pending",
+      "activityId": "act-1793492158572-efeu",
+      "createdAt": "2026-11-08T03:00:01.097Z"
+    },
+    {
+      "id": "prop-1794107078250-22ag",
+      "activityId": "act-1793492417422-33n8",
+      "status": "accepted",
+      "note": "resto pour les perdant ?",
+      "friendName": "JEREMY",
+      "activityTitle": "five",
+      "date": "2026-11-14",
+      "friendContact": "°09°099",
+      "createdAt": "2026-11-08T03:04:38.250Z",
+      "slot": "evening"
+    }
+  ],
+  "scheduleSlots": [
+    {
+      "id": "2026-11-14_evening",
+      "friendName": "JEREMY",
+      "note": "resto pour les perdant ?",
+      "activityTitle": "five",
+      "participants": [
+        {
+          "name": "(ret",
+          "joinedAt": "2026-11-08T03:08:45.671Z",
+          "note": "ehrq<",
+          "contact": "rhe<q"
+        }
+      ],
+      "date": "2026-11-14",
+      "slot": "evening",
+      "activityId": "act-1793492417422-33n8",
+      "proposalId": "prop-1794107078250-22ag"
+    }
+  ],
+  "notifications": [],
+  "suggestions": []
 }

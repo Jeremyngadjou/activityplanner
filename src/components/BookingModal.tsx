@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Activity, Proposal, ScheduleSlot, SlotType } from '../types';
 import { ActivityIcon } from './ActivityIcon';
 import {
@@ -32,6 +32,8 @@ interface BookingModalProps {
     slot: SlotType,
     participant: { name: string; contact?: string; note?: string }
   ) => Promise<void>;
+  onRemoveSlot?: (date: string, slot: string) => Promise<void>;
+  isOrganizer?: boolean;
   defaultYear?: number;
   defaultMonth?: number;
 }
@@ -74,6 +76,17 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   const [wasJoined, setWasJoined] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+
+  // Close modal on Escape key press
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
   // Dynamic calendar math for current picker month & year
   const daysInMonth = new Date(pickerYear, pickerMonth + 1, 0).getDate();
@@ -215,31 +228,38 @@ export const BookingModal: React.FC<BookingModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm overflow-y-auto">
-      <div className="relative w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-8 animate-in fade-in zoom-in-95 duration-200">
-        {/* Top Header */}
-        <div className={`p-6 bg-gradient-to-r ${activity.accentGradient} text-white relative`}>
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/65 backdrop-blur-sm animate-in fade-in duration-200"
+    >
+      <div className="relative w-full max-w-lg max-h-[90vh] sm:max-h-[85vh] bg-white rounded-2xl sm:rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+        {/* Top Header - Fixed/pinned at top of modal */}
+        <div className={`px-5 py-3.5 sm:px-6 sm:py-4 bg-gradient-to-r ${activity.accentGradient} text-white shrink-0 relative pr-14 shadow-sm`}>
           <button
+            type="button"
             onClick={onClose}
-            className="absolute top-4 right-4 p-2 text-white/80 hover:text-white bg-black/20 hover:bg-black/40 rounded-full transition-colors cursor-pointer"
-            title="Fermer"
+            className="absolute top-3 right-3 sm:top-3.5 sm:right-3.5 w-8 h-8 rounded-full bg-black/25 hover:bg-black/50 text-white flex items-center justify-center transition-all cursor-pointer hover:scale-105 active:scale-95 shadow-sm"
+            title="Fermer cette activité (Échap)"
+            aria-label="Fermer la fiche d'activité"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
-          <div className="flex items-center gap-2 text-white/80 text-xs font-semibold uppercase tracking-wider mb-1">
-            <ActivityIcon name={activity.iconName} className="w-4 h-4" />
+          <div className="flex items-center gap-1.5 text-white/85 text-[11px] font-semibold uppercase tracking-wider mb-0.5">
+            <ActivityIcon name={activity.iconName} className="w-3.5 h-3.5" />
             <span>
               {activity.category} · {activity.duration}
             </span>
           </div>
-          <h2 className="text-xl md:text-2xl font-bold tracking-tight text-white mb-2">
+          <h2 className="text-base sm:text-lg font-bold tracking-tight text-white line-clamp-1">
             {activity.title}
           </h2>
-          <p className="text-sm text-white/90 line-clamp-2">{activity.description}</p>
+          <p className="text-xs text-white/90 line-clamp-1 mt-0.5">{activity.description}</p>
         </div>
 
         {submitted ? (
-          <div className="p-8 text-center space-y-5">
+          <div className="flex-1 overflow-y-auto p-6 sm:p-8 text-center space-y-4">
             <div className="w-16 h-16 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center mx-auto shadow-inner">
               <Check className="w-9 h-9 stroke-[2.5]" />
             </div>
@@ -306,7 +326,7 @@ export const BookingModal: React.FC<BookingModalProps> = ({
             </button>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4">
             {/* Quick Banner: Existing Sessions for this activity */}
             {existingActivitySlots.length > 0 && (
               <div className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-4 space-y-3">
@@ -637,12 +657,12 @@ export const BookingModal: React.FC<BookingModalProps> = ({
               {errorMsg && <p className="text-xs text-rose-600 font-medium">{errorMsg}</p>}
             </div>
 
-            {/* Submit button */}
-            <div className="pt-2">
+            {/* Submit & Close buttons */}
+            <div className="pt-2 space-y-2">
               <button
                 type="submit"
                 disabled={isSubmitting || !!isCurrentSlotForOtherActivity}
-                className={`w-full py-3.5 px-6 font-semibold rounded-xl text-sm transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                className={`w-full py-3 px-5 font-semibold rounded-xl text-xs sm:text-sm transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
                   isCurrentSlotForThisActivity
                     ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
                     : 'bg-slate-900 hover:bg-slate-800 text-white'
@@ -666,7 +686,15 @@ export const BookingModal: React.FC<BookingModalProps> = ({
                 )}
               </button>
 
-              <p className="text-center text-[11px] text-slate-500 mt-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="w-full py-2 text-xs font-semibold text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer text-center"
+              >
+                Fermer et voir les autres activités
+              </button>
+
+              <p className="text-center text-[11px] text-slate-500 pt-1">
                 {isCurrentSlotForThisActivity
                   ? 'Votre participation sera immédiatement ajoutée et notifiée à l’organisateur !'
                   : 'L’organisateur recevra votre demande et pourra l’insérer directement dans son emploi du temps !'}
