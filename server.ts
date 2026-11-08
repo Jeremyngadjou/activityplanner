@@ -139,9 +139,15 @@ const getGenAI = () => {
 app.get('/api/data', async (_req, res) => {
   try {
     const store = await readStore();
+    const seen = new Set<string>();
+    const uniqueActivities = store.activities.filter((a: any) => {
+      if (!a?.id || seen.has(a.id)) return false;
+      seen.add(a.id);
+      return true;
+    });
     res.json({
       success: true,
-      activities: store.activities,
+      activities: uniqueActivities,
       proposals: store.proposals,
       scheduleSlots: store.scheduleSlots,
       notifications: store.notifications,
@@ -222,8 +228,10 @@ app.post('/api/activities', async (req, res) => {
       id: req.body.id || `act-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       createdAt: new Date().toISOString(),
     };
-    store.activities.unshift(newActivity);
-    await writeStore(store);
+    if (!store.activities.some((a: any) => a.id === newActivity.id)) {
+      store.activities.unshift(newActivity);
+      await writeStore(store);
+    }
     res.json({ success: true, activity: newActivity });
   } catch (err: any) {
     res.status(500).json({ success: false, error: err.message });

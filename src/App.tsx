@@ -402,7 +402,14 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         if (data.success) {
-          setActivities(data.activities && data.activities.length > 0 ? data.activities : INITIAL_ACTIVITIES);
+          const rawActs = data.activities && data.activities.length > 0 ? data.activities : INITIAL_ACTIVITIES;
+          const seen = new Set<string>();
+          const uniqueActs = rawActs.filter((a: Activity) => {
+            if (!a?.id || seen.has(a.id)) return false;
+            seen.add(a.id);
+            return true;
+          });
+          setActivities(uniqueActs);
           setProposals(data.proposals || []);
           setScheduleSlots(data.scheduleSlots || []);
 
@@ -432,7 +439,14 @@ export default function App() {
     } catch {
       // Offline / Vercel static fallback
       const savedActs = localStorage.getItem('rdv_nov_activities');
-      setActivities(savedActs ? JSON.parse(savedActs) : INITIAL_ACTIVITIES);
+      const parsed = savedActs ? JSON.parse(savedActs) : INITIAL_ACTIVITIES;
+      const seen = new Set<string>();
+      const unique = parsed.filter((a: Activity) => {
+        if (!a?.id || seen.has(a.id)) return false;
+        seen.add(a.id);
+        return true;
+      });
+      setActivities(unique);
 
       const savedProps = localStorage.getItem('rdv_nov_proposals');
       setProposals(savedProps ? JSON.parse(savedProps) : []);
@@ -455,7 +469,13 @@ export default function App() {
     // 1. Subscribe to Activities in real-time
     const unsubActivities = subscribeActivities((liveActivities) => {
       if (liveActivities && liveActivities.length > 0) {
-        setActivities(liveActivities);
+        const seen = new Set<string>();
+        const unique = liveActivities.filter((act) => {
+          if (!act?.id || seen.has(act.id)) return false;
+          seen.add(act.id);
+          return true;
+        });
+        setActivities(unique);
       }
       setIsLoading(false);
     });
@@ -1057,6 +1077,12 @@ export default function App() {
       monthKey: newAct.monthKey || activeMonthKey,
     };
 
+    // Optimistically add to local state without duplicates
+    setActivities((prev) => {
+      if (prev.some((a) => a.id === fullAct.id)) return prev;
+      return [fullAct, ...prev];
+    });
+
     try {
       await saveActivityToFirestore(fullAct);
     } catch (e) {
@@ -1070,8 +1096,6 @@ export default function App() {
         body: JSON.stringify(fullAct),
       });
     } catch {}
-
-    setActivities((prev) => [fullAct, ...prev]);
   };
 
   // Update activity (organizer)
@@ -1162,11 +1186,16 @@ export default function App() {
 
   const activeMonthKey = `${activeYear}-${String(activeMonth + 1).padStart(2, '0')}`;
 
-  // Activities scoped to the currently displayed month
-  const monthActivities = activities.filter((act) => {
-    const actMonth = act.monthKey || '2026-11';
-    return actMonth === activeMonthKey || act.monthKey === 'all';
-  });
+  // Activities scoped to the currently displayed month (guaranteed unique by ID)
+  const monthActivities = React.useMemo(() => {
+    const seen = new Set<string>();
+    return activities.filter((act) => {
+      if (!act?.id || seen.has(act.id)) return false;
+      seen.add(act.id);
+      const actMonth = act.monthKey || '2026-11';
+      return actMonth === activeMonthKey || act.monthKey === 'all';
+    });
+  }, [activities, activeMonthKey]);
 
   const filteredActivities = monthActivities.filter((act) => {
     const matchesCategory = selectedCategory === 'all' || act.category === selectedCategory;

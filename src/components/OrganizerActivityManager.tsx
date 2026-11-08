@@ -77,16 +77,19 @@ export const OrganizerActivityManager: React.FC<OrganizerActivityManagerProps> =
   const [activityMonthKey, setActivityMonthKey] = useState<string>(currentMonthKey);
   const [isEnhancing, setIsEnhancing] = useState(false);
 
-  // Filter activities based on selection
-  const filteredActivities = activities.filter((act) => {
-    if (monthFilter === 'all') return true;
-    const actMonth = act.monthKey || '2026-11';
-    return actMonth === currentMonthKey;
-  });
+  // Filter activities based on selection (guaranteed unique by ID)
+  const filteredActivities = React.useMemo(() => {
+    const seen = new Set<string>();
+    return activities.filter((act) => {
+      if (!act?.id || seen.has(act.id)) return false;
+      seen.add(act.id);
+      if (monthFilter === 'all') return true;
+      const actMonth = act.monthKey || '2026-11';
+      return actMonth === currentMonthKey;
+    });
+  }, [activities, monthFilter, currentMonthKey]);
 
-  const monthCount = activities.filter(
-    (a) => (a.monthKey || '2026-11') === currentMonthKey
-  ).length;
+  const monthCount = filteredActivities.length;
 
   const openAddModal = () => {
     setEditingActivity(null);
